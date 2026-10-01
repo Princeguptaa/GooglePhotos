@@ -2,7 +2,7 @@ import os
 
 class Config:
     # Paths
-    if os.environ.get('RENDER') == 'true':
+    if os.environ.get('RENDER', '').lower() == 'true':
         UPLOAD_FOLDER = '/data/uploads'
         DATABASE_PATH = '/data/instance/documents.db'
     else:
@@ -15,7 +15,7 @@ class Config:
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 
     # OCR
-    TESSERACT_CMD = os.environ.get('TESSERACT_CMD', 'tesseract')
+    TESSERACT_CMD = os.environ.get('TESSERACT_CMD', 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe' if os.name == 'nt' and os.path.exists('C:\\Program Files\\Tesseract-OCR\\tesseract.exe') else 'tesseract')
     TESSERACT_PSM = 6             # Page segmentation mode
     TESSERACT_OEM = 3             # OCR engine mode
 

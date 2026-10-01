@@ -1,100 +1,173 @@
 import re
-from rapidfuzz import fuzz
+from typing import List, Dict, Any
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from rapidfuzz import fuzz, process
 from config import Config
 
-def rank(query: str, documents: list[dict]) -> list[dict]:
+def rank(query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Ranks documents based on a search query using TF-IDF and fuzzy matching.
+    """
     if not documents or not query.strip():
         return []
 
-    doc_texts = [doc.get('ocr_text', '') for doc in documents]
+    query = query.lower()
     
-    # 1. TF-IDF
-    vectorizer = TfidfVectorizer(stop_words='english', lowercase=True)
+    # Extract texts and handle potential missing keys safely
+    doc_texts = [doc.get('ocr_text', '').lower() for doc in documents]
+    
+    # 1. & 2. Build TF-IDF matrix and transform query
+    vectorizer = TfidfVectorizer()
     try:
         tfidf_matrix = vectorizer.fit_transform(doc_texts)
         query_vec = vectorizer.transform([query])
-        cosine_sims = cosine_similarity(query_vec, tfidf_matrix).flatten()
     except ValueError:
-        # Happens if vocab is empty (all texts are empty or stop words)
-        cosine_sims = [0.0] * len(documents)
+        # Happens if all documents are empty or contain only stop words
+        return []
 
-    query_tokens = [t.lower() for t in query.split() if t.strip()]
+    # 3. Compute cosine similarity
+    cosine_sims = cosine_similarity(query_vec, tfidf_matrix).flatten()
 
-    scored_docs = []
-    for i, doc in enumerate(documents):
-        base_score = cosine_sims[i]
+    results = []
+    
+    for idx, doc in enumerate(documents):
+        base_score = cosine_sims[idx]
+        ocr_text = doc.get('ocr_text', '')
         
-        # 2. Fuzzy Match
-        doc_text = doc.get('ocr_text', '')
-        doc_text_lower = doc_text.lower()
+        # 4. Compute fuzzy token match
+        fuzzy_boost = _fuzzy_score(query, ocr_text.lower())
         
-        if not doc_text_lower or not query_tokens:
-            fuzzy_boost = 0.0
-        else:
-            fuzzy_scores = []
-            for token in query_tokens:
-                score = fuzz.partial_ratio(token, doc_text_lower) / 100.0
-                fuzzy_scores.append(score)
-            fuzzy_boost = sum(fuzzy_scores) / len(fuzzy_scores)
-            
+        # 5. Final score
         final_score = (Config.TFIDF_WEIGHT * base_score) + (Config.FUZZY_WEIGHT * fuzzy_boost)
         
+        # 6. Filter by threshold
         if final_score >= Config.MIN_SCORE_THRESHOLD:
-            snippet_data = extract_snippet(doc_text, query, Config.SNIPPET_MAX_LENGTH)
-            scored_docs.append({
-                'image_id': doc['id'],
-                'thumbnail_url': f"/api/images/{doc['id']}",
-                'original_name': doc['original_name'],
-                'score': round(final_score * 100),
-                'snippet': snippet_data['text'],
-                'highlight_ranges': snippet_data['highlight_ranges']
-            })
+            # 7. Extract snippet
+            snippet_info = extract_snippet(ocr_text, query, Config.SNIPPET_MAX_LENGTH)
             
-    scored_docs.sort(key=lambda x: x['score'], reverse=True)
-    return scored_docs
-
-
-def extract_snippet(ocr_text: str, query: str, max_len: int = 150) -> dict:
-    if not ocr_text:
-        return {"text": "", "highlight_ranges": []}
-
-    query_tokens = [t.lower() for t in query.split() if t.strip()]
-    text_lower = ocr_text.lower()
-    
-    best_pos = -1
-    best_token = ""
-    for token in query_tokens:
-        idx = text_lower.find(token)
-        if idx != -1:
-            best_pos = idx
-            best_token = token
-            break
+            result = {
+                'id': doc.get('id'),
+                'score': float(final_score),
+                'snippet': snippet_info['text'],
+                'highlight_ranges': snippet_info['highlight_ranges']
+            }
+            results.append(result)
             
-    if best_pos == -1:
-        # Fallback to fuzzy find roughly
-        best_pos = 0
+    # 8. Sort descending by score
+    results.sort(key=lambda x: x['score'], reverse=True)
+    return results
 
-    half_len = max_len // 2
-    start = max(0, best_pos - half_len)
-    end = min(len(ocr_text), best_pos + half_len)
-    
-    snippet = ocr_text[start:end]
-    if start > 0:
-        snippet = "..." + snippet
-    if end < len(ocr_text):
-        snippet = snippet + "..."
+def _fuzzy_score(query: str, doc_text: str) -> float:
+    """
+    Returns average fuzzy ratio across query tokens.
+    """
+    if not doc_text:
+        return 0.0
         
-    # Highlighting (very basic naive approach for MVP)
-    highlight_ranges = []
-    snippet_lower = snippet.lower()
-    for token in query_tokens:
-        # find all occurrences of token in snippet
-        for match in re.finditer(re.escape(token), snippet_lower):
-            highlight_ranges.append([match.start(), match.end()])
+    query_tokens = query.split()
+    if not query_tokens:
+        return 0.0
+        
+    doc_tokens = doc_text.split()
+    if not doc_tokens:
+        return 0.0
+        
+    total_score = 0.0
+    for q_token in query_tokens:
+        # Find the best match for this query token in the document tokens
+        # rapidfuzz.process.extractOne returns (match, score, index)
+        # score is out of 100
+        best_match = process.extractOne(q_token, doc_tokens, scorer=fuzz.ratio, score_cutoff=50)
+        if best_match:
+            # normalize to 0-1
+            total_score += (best_match[1] / 100.0)
+            
+    return total_score / len(query_tokens)
 
+def extract_snippet(ocr_text: str, query: str, max_len: int = 150) -> Dict[str, Any]:
+    """
+    Extracts a snippet around the best match for the query and returns highlight ranges.
+    """
+    if not ocr_text or not query:
+        return {"text": "", "highlight_ranges": []}
+        
+    query_tokens = query.lower().split()
+    if not query_tokens:
+        return {"text": ocr_text[:max_len] + "..." if len(ocr_text) > max_len else ocr_text, "highlight_ranges": []}
+        
+    ocr_lower = ocr_text.lower()
+    
+    # Find the best token to match in the text
+    # We will just look for the first query token that has a good match in the text
+    best_pos = -1
+    best_match_len = 0
+    
+    # Simple strategy: find exact or partial match index for the longest query token
+    longest_q_token = max(query_tokens, key=len)
+    pos = ocr_lower.find(longest_q_token)
+    
+    if pos != -1:
+        best_pos = pos
+        best_match_len = len(longest_q_token)
+    else:
+        # If no exact substring, just find the best fuzzy match position (simplified)
+        # Let's find the first word in ocr_text that strongly matches the longest query token
+        doc_words = ocr_text.split()
+        best_word = process.extractOne(longest_q_token, doc_words, scorer=fuzz.ratio)
+        if best_word and best_word[1] > 60:
+            # find index of this word in the original text
+            pos = ocr_text.find(best_word[0])
+            if pos != -1:
+                best_pos = pos
+                best_match_len = len(best_word[0])
+
+    if best_pos == -1:
+        # Fallback if no good match position found
+        snippet_text = ocr_text[:max_len]
+        return {"text": snippet_text + ("..." if len(ocr_text) > max_len else ""), "highlight_ranges": []}
+        
+    # Extract snippet around best_pos
+    half_len = max_len // 2
+    
+    start_idx = max(0, best_pos - half_len)
+    end_idx = min(len(ocr_text), best_pos + best_match_len + half_len)
+    
+    # Adjust to word boundaries if possible
+    if start_idx > 0:
+        # Try to find a space to start cleanly
+        space_pos = ocr_text.find(' ', start_idx)
+        if space_pos != -1 and space_pos < best_pos:
+            start_idx = space_pos + 1
+            
+    if end_idx < len(ocr_text):
+        # Try to find a space to end cleanly
+        space_pos = ocr_text.rfind(' ', best_pos + best_match_len, end_idx)
+        if space_pos != -1:
+            end_idx = space_pos
+            
+    snippet = ocr_text[start_idx:end_idx]
+    prefix = "..." if start_idx > 0 else ""
+    suffix = "..." if end_idx < len(ocr_text) else ""
+    
+    final_snippet = prefix + snippet + suffix
+    
+    # Calculate highlight ranges relative to snippet
+    # Find the matching token in the snippet
+    highlight_ranges = []
+    snippet_lower = final_snippet.lower()
+    
+    for q_token in query_tokens:
+        # Search for occurrences of query tokens in the snippet
+        # We use re.finditer to find boundaries if possible
+        # Need to escape q_token for regex
+        try:
+            for match in re.finditer(re.escape(q_token), snippet_lower):
+                highlight_ranges.append([match.start(), match.end()])
+        except re.error:
+            pass
+            
     return {
-        "text": snippet,
+        "text": final_snippet,
         "highlight_ranges": highlight_ranges
     }

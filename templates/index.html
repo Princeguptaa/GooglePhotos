@@ -3,64 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Search through your uploaded documents using OCR.">
     <title>OCR Document Search</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <meta name="description" content="Search through your images and documents using OCR-based search.">
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="/static/js/app.js" defer></script>
 </head>
 <body>
     <header id="app-header">
-        <h1>OCR Document Search</h1>
-        <p class="tagline">Find text in your images instantly</p>
+        <div class="header-content">
+            <h1>OCR Document Search</h1>
+            <p class="tagline">Upload images, search by text, find instantly.</p>
+        </div>
     </header>
 
-    <main>
-        <section id="upload-zone" class="glass-card">
-            <div id="drop-area">
-                <p>Drag & drop images here</p>
-                <p>or</p>
-                <input type="file" id="file-input" multiple accept=".png,.jpg,.jpeg,.webp" hidden>
-                <button id="browse-btn" class="btn">Browse Files</button>
+    <main class="container">
+        <!-- Upload Zone -->
+        <section id="upload-zone">
+            <div id="drop-area" class="drop-area">
+                <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                <p>Drag & drop images here or</p>
+                <input type="file" id="file-input" multiple accept="image/png, image/jpeg, image/jpg, image/webp" hidden>
+                <button id="browse-btn" class="btn primary-btn">Browse Files</button>
             </div>
             
-            <div id="thumbnail-strip" class="hidden">
-                <!-- Thumbnails will be injected here -->
+            <div class="thumbnail-strip-container">
+                <h3>Your Library</h3>
+                <div id="thumbnail-strip" class="thumbnail-strip">
+                    <!-- Thumbnails will be injected here -->
+                </div>
             </div>
         </section>
 
+        <!-- Search Section -->
         <section id="search-section">
-            <div class="search-container glass-card">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="search-input" placeholder="Search your documents..." aria-label="Search">
+            <div class="search-bar-wrapper">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="search-input" placeholder="Search for documents, receipts, text..." autocomplete="off">
             </div>
         </section>
 
+        <!-- Results Area -->
         <section id="results-area">
-            <div id="empty-state">
-                <div class="empty-icon">📄</div>
-                <p id="empty-message">Upload documents and search to see results here.</p>
-            </div>
-            <div id="results-grid" class="hidden">
-                <!-- Result cards will be injected here -->
+            <!-- Result cards or empty state injected here -->
+            <div id="empty-state" class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="fa-solid fa-magnifying-glass-chart"></i>
+                </div>
+                <p>Start searching to see results</p>
             </div>
         </section>
     </main>
 
+    <!-- Preview Modal -->
     <div id="preview-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
-        <div class="modal-content glass-card">
-            <button id="close-modal" class="close-btn" aria-label="Close modal">&times;</button>
-            <div class="modal-body">
+        <div class="modal-content glass-panel">
+            <button class="close-modal-btn"><i class="fa-solid fa-xmark"></i></button>
+            <div class="modal-layout">
                 <div class="modal-image-col">
-                    <img id="modal-image" src="" alt="Full document preview">
+                    <img id="modal-image" src="" alt="Full size preview">
                 </div>
                 <div class="modal-text-col">
                     <h3>Extracted Text</h3>
-                    <div id="modal-ocr-text"></div>
+                    <div id="modal-ocr-text" class="ocr-text-content">
+                        <!-- OCR Text injected here -->
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/app.js" defer></script>
 </body>
 </html>

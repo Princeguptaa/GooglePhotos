@@ -2,52 +2,60 @@ import os
 import shutil
 import uuid
 from app import app
-from storage.db import init_db, insert_document
+from storage.db import init_db, insert_document, get_all_documents
 from ocr.engine import extract_text
+from config import Config
 
-def load_data():
-    with app.app_context():
-        init_db()
-        
-    mock_dir = os.path.join(os.path.dirname(__file__), 'mock_data')
-    uploads_dir = app.config['UPLOAD_FOLDER']
-    os.makedirs(uploads_dir, exist_ok=True)
+def load_mock_data():
+    mock_data_dir = 'mock_data'
+    uploads_dir = Config.UPLOAD_FOLDER
     
-    print("Loading mock data...")
-    count = 0
-    if not os.path.exists(mock_dir):
-        print(f"Directory {mock_dir} not found. Run generate_mock_data.py first.")
+    if not os.path.exists(mock_data_dir):
+        print(f"Directory {mock_data_dir} does not exist.")
         return
-        
-    for filename in os.listdir(mock_dir):
-        if not filename.endswith('.png'):
-            continue
-            
-        src_path = os.path.join(mock_dir, filename)
-        doc_id = str(uuid.uuid4())
-        ext = 'png'
-        new_filename = f"{doc_id}.{ext}"
-        dst_path = os.path.join(uploads_dir, new_filename)
-        
-        shutil.copy2(src_path, dst_path)
-        
-        try:
-            text = extract_text(dst_path)
-            # if OCR fails locally, insert with fake text for testing? 
-            # Or just use the extracted text. If tesseract is not available, it might fail.
-        except Exception as e:
-            print(f"OCR failed for {filename}: {e}")
-            text = filename.replace('_', ' ').replace('.png', '')  # Fallback
-            
-        insert_document({
-            'id': doc_id,
-            'filename': new_filename,
-            'original_name': filename,
-            'ocr_text': text
-        })
-        count += 1
-        
-    print(f"Loaded {count} documents.")
+
+    # Initialize db just in case
+    init_db()
+
+    # Create app context to run DB queries safely
+    with app.app_context():
+        # Get existing original_names so we don't duplicate
+        existing_docs = get_all_documents()
+        existing_names = {doc['original_name'] for doc in existing_docs}
+
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        loaded_count = 0
+        for filename in os.listdir(mock_data_dir):
+            if filename in existing_names:
+                print(f"Skipping {filename}, already loaded.")
+                continue
+
+            if filename.endswith(('.png', '.jpg', '.jpeg')):
+                mock_filepath = os.path.join(mock_data_dir, filename)
+                
+                # Generate unique ID and copy
+                file_uuid = str(uuid.uuid4())
+                ext = filename.rsplit('.', 1)[1].lower()
+                saved_filename = f"{file_uuid}.{ext}"
+                saved_path = os.path.join(uploads_dir, saved_filename)
+                
+                shutil.copy2(mock_filepath, saved_path)
+                
+                # Extract text
+                ocr_text = extract_text(saved_path)
+                
+                # Insert DB
+                insert_document({
+                    'id': file_uuid,
+                    'filename': saved_filename,
+                    'original_name': filename,
+                    'ocr_text': ocr_text
+                })
+                loaded_count += 1
+                print(f"Loaded {filename} as {file_uuid}")
+
+        print(f"\nLoaded {loaded_count} new documents.")
 
 if __name__ == '__main__':
-    load_data()
+    load_mock_data()

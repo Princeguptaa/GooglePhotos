@@ -1,134 +1,166 @@
 import os
 import uuid
 from flask import Flask, render_template, request, jsonify, send_file
-from werkzeug.utils import secure_filename
 from config import Config
-
-from storage.db import init_db, insert_document, get_all_documents, get_document, delete_document, get_document_count
-from ocr.engine import extract_text
-from search.ranker import rank
+from storage import db
+from ocr import engine
+from search import ranker
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Ensure upload folder exists on startup
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-# Initialize DB on startup
-with app.app_context():
-    init_db()
+db.init_db()
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
 @app.route('/', methods=['GET'])
 def index():
     return render_template('index.html')
 
 @app.route('/api/upload', methods=['POST'])
-def upload_files():
+def upload():
     if 'files' not in request.files:
-        return jsonify({"errors": ["No file part"]}), 400
+        return jsonify({"uploaded": [], "errors": ["No file part"]}), 400
         
     files = request.files.getlist('files')
     uploaded = []
     errors = []
     
-    current_count = get_document_count()
-    
     for file in files:
         if file.filename == '':
+            errors.append("Empty filename")
             continue
             
-        if current_count >= app.config['MAX_LIBRARY_SIZE']:
-            errors.append(f"Library full. Cannot upload {file.filename}.")
+        if not allowed_file(file.filename):
+            errors.append(f"{file.filename} has an invalid extension")
             continue
             
-        ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-        if ext not in app.config['ALLOWED_EXTENSIONS']:
-            errors.append(f"Invalid extension for {file.filename}")
-            continue
-            
-        doc_id = str(uuid.uuid4())
-        filename = f"{doc_id}.{ext}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.seek(0, os.SEEK_END)
+        file_length = file.tell()
+        file.seek(0)
         
-        file.save(filepath)
-        file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
-        if file_size_mb > app.config['MAX_FILE_SIZE_MB']:
-            os.remove(filepath)
-            errors.append(f"{file.filename} is too large (>10MB)")
+        if file_length > Config.MAX_FILE_SIZE_MB * 1024 * 1024:
+            errors.append(f"{file.filename} exceeds {Config.MAX_FILE_SIZE_MB}MB")
             continue
             
-        ocr_text = extract_text(filepath)
+        if db.get_document_count() >= Config.MAX_LIBRARY_SIZE:
+            errors.append("Max library size reached")
+            continue
+
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        image_id = str(uuid.uuid4())
+        saved_filename = f"{image_id}.{ext}"
+        saved_path = os.path.join(app.config['UPLOAD_FOLDER'], saved_filename)
         
-        insert_document({
-            'id': doc_id,
-            'filename': filename,
+        file.save(saved_path)
+        
+        try:
+            ocr_text = engine.extract_text(saved_path)
+        except Exception as e:
+            errors.append(f"OCR failed for {file.filename}: {str(e)}")
+            continue
+            
+        doc = {
+            'id': image_id,
+            'filename': saved_filename,
             'original_name': file.filename,
             'ocr_text': ocr_text
-        })
+        }
+        db.insert_document(doc)
         
+        thumbnail_url = f"/static/uploads/{saved_filename}"
+
         uploaded.append({
-            "image_id": doc_id,
+            "image_id": image_id,
             "original_name": file.filename,
-            "thumbnail_url": f"/api/images/{doc_id}",
-            "ocr_preview": ocr_text[:50] + "..." if ocr_text else "",
+            "thumbnail_url": thumbnail_url,
+            "ocr_preview": ocr_text[:100] + ("..." if len(ocr_text) > 100 else ""),
             "status": "ready"
         })
-        current_count += 1
         
-    return jsonify({"uploaded": uploaded, "errors": errors})
+    return jsonify({"uploaded": uploaded, "errors": errors}), 200
 
 @app.route('/api/search', methods=['GET'])
 def search():
     query = request.args.get('q', '')
     if not query or len(query) > 200:
-        return jsonify({"query": query, "results": [], "message": "Please enter a valid search term."}), 400
+        return jsonify({"error": "Invalid query"}), 400
         
-    docs = get_all_documents()
-    results = rank(query, docs)
+    documents = db.get_all_documents()
+    results = ranker.rank(query, documents)
     
-    if not results:
-        return jsonify({"query": query, "results": [], "message": "No documents matched your search."})
+    formatted_results = []
+    for r in results:
+        doc = db.get_document(r['id'])
+        thumbnail_url = f"/static/uploads/{doc['filename']}" if doc else ""
+        formatted_results.append({
+            "image_id": r['id'],
+            "thumbnail_url": thumbnail_url,
+            "score": r['score'],
+            "snippet": r['snippet'],
+            "highlight_ranges": r['highlight_ranges']
+        })
         
-    return jsonify({"query": query, "results": results})
+    if not formatted_results:
+        return jsonify({
+            "query": query,
+            "results": [],
+            "message": "No documents matched your search."
+        }), 200
+        
+    return jsonify({
+        "query": query,
+        "results": formatted_results
+    }), 200
 
 @app.route('/api/library', methods=['GET'])
 def library():
-    docs = get_all_documents()
-    library_items = [{
-        "image_id": d['id'],
-        "thumbnail_url": f"/api/images/{d['id']}",
-        "original_name": d['original_name'],
-        "has_ocr_text": bool(d['ocr_text'])
-    } for d in docs]
-    return jsonify(library_items)
+    documents = db.get_all_documents()
+    results = []
+    for doc in documents:
+        results.append({
+            "id": doc['id'],
+            "thumbnail_url": f"/static/uploads/{doc['filename']}",
+            "original_name": doc['original_name'],
+            "has_ocr_text": bool(doc['ocr_text'].strip())
+        })
+    return jsonify(results), 200
 
 @app.route('/api/images/<image_id>', methods=['GET'])
 def get_image(image_id):
-    doc = get_document(image_id)
+    doc = db.get_document(image_id)
     if not doc:
-        return "Not found", 404
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], doc['filename'])
-    if not os.path.exists(filepath):
-        return "File not found", 404
-    return send_file(filepath)
+        return jsonify({"error": "Not found"}), 404
+    path = os.path.join(app.config['UPLOAD_FOLDER'], doc['filename'])
+    if not os.path.exists(path):
+        return jsonify({"error": "File missing"}), 404
+    
+    # We should send file relative to the current working directory, or using absolute path.
+    return send_file(os.path.abspath(path))
 
 @app.route('/api/images/<image_id>/ocr', methods=['GET'])
-def get_ocr(image_id):
-    doc = get_document(image_id)
+def get_image_ocr(image_id):
+    doc = db.get_document(image_id)
     if not doc:
-        return "Not found", 404
-    return jsonify({"ocr_text": doc['ocr_text']})
+        return jsonify({"error": "Not found"}), 404
+    return jsonify({"ocr_text": doc['ocr_text']}), 200
 
 @app.route('/api/images/<image_id>', methods=['DELETE'])
 def delete_image(image_id):
-    doc = get_document(image_id)
+    doc = db.get_document(image_id)
     if not doc:
-        return "Not found", 404
+        return jsonify({"error": "Not found"}), 404
     
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], doc['filename'])
-    if os.path.exists(filepath):
-        os.remove(filepath)
+    path = os.path.join(app.config['UPLOAD_FOLDER'], doc['filename'])
+    if os.path.exists(path):
+        os.remove(path)
         
-    delete_document(image_id)
-    return jsonify({"deleted": True})
+    db.delete_document(image_id)
+    return jsonify({"deleted": True}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=app.config['DEBUG'])
+    app.run(debug=app.config['DEBUG'])

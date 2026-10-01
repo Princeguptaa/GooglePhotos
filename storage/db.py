@@ -1,64 +1,59 @@
 import sqlite3
-from flask import g
-from config import Config
 import os
+from contextlib import closing
+from config import Config
 
-def get_db():
-    db = sqlite3.connect(
-        Config.DATABASE_PATH,
-        detect_types=sqlite3.PARSE_DECLTYPES
-    )
-    db.row_factory = sqlite3.Row
-    return db
+def get_connection():
+    conn = sqlite3.connect(Config.DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def init_db():
-    os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)
-    db = get_db()
-    with db:
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS documents (
-                id TEXT PRIMARY KEY,
-                filename TEXT NOT NULL,
-                original_name TEXT NOT NULL,
-                ocr_text TEXT NOT NULL,
-                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    db.close()
+def init_db() -> None:
+    db_dir = os.path.dirname(Config.DATABASE_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+        
+    with closing(get_connection()) as conn:
+        with conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS documents (
+                    id          TEXT PRIMARY KEY,
+                    filename    TEXT NOT NULL,
+                    original_name TEXT NOT NULL,
+                    ocr_text    TEXT NOT NULL,
+                    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.execute('''
+                CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts
+                USING fts5(ocr_text, content='documents', content_rowid='rowid')
+            ''')
 
 def insert_document(doc: dict) -> str:
-    db = get_db()
-    with db:
-        db.execute(
-            'INSERT INTO documents (id, filename, original_name, ocr_text) VALUES (?, ?, ?, ?)',
-            (doc['id'], doc['filename'], doc['original_name'], doc.get('ocr_text', ''))
-        )
-    db.close()
+    with closing(get_connection()) as conn:
+        with conn:
+            conn.execute('''
+                INSERT INTO documents (id, filename, original_name, ocr_text)
+                VALUES (?, ?, ?, ?)
+            ''', (doc['id'], doc['filename'], doc['original_name'], doc['ocr_text']))
     return doc['id']
 
 def get_all_documents() -> list[dict]:
-    db = get_db()
-    cur = db.execute('SELECT * FROM documents ORDER BY uploaded_at DESC')
-    docs = [dict(row) for row in cur.fetchall()]
-    db.close()
-    return docs
+    with closing(get_connection()) as conn:
+        rows = conn.execute('SELECT * FROM documents ORDER BY uploaded_at DESC').fetchall()
+        return [dict(row) for row in rows]
 
-def get_document(doc_id: str) -> dict:
-    db = get_db()
-    cur = db.execute('SELECT * FROM documents WHERE id = ?', (doc_id,))
-    row = cur.fetchone()
-    db.close()
-    return dict(row) if row else None
+def get_document(doc_id: str) -> dict | None:
+    with closing(get_connection()) as conn:
+        row = conn.execute('SELECT * FROM documents WHERE id = ?', (doc_id,)).fetchone()
+        return dict(row) if row else None
 
 def delete_document(doc_id: str) -> None:
-    db = get_db()
-    with db:
-        db.execute('DELETE FROM documents WHERE id = ?', (doc_id,))
-    db.close()
+    with closing(get_connection()) as conn:
+        with conn:
+            conn.execute('DELETE FROM documents WHERE id = ?', (doc_id,))
 
 def get_document_count() -> int:
-    db = get_db()
-    cur = db.execute('SELECT COUNT(*) FROM documents')
-    count = cur.fetchone()[0]
-    db.close()
-    return count
+    with closing(get_connection()) as conn:
+        row = conn.execute('SELECT COUNT(*) FROM documents').fetchone()
+        return row[0]
