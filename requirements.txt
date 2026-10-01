@@ -1,0 +1,6 @@
+flask==3.1.*
+gunicorn==23.*
+pytesseract==0.3.*
+Pillow==11.*
+scikit-learn==1.6.*
+rapidfuzz==3.*
