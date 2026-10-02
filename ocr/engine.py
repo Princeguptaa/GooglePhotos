@@ -47,8 +47,15 @@ def extract_text(image_path: str) -> str:
             new_h = int(height * scale)
             img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-        # 3. Convert to grayscale
-        img = img.convert('L')
+        # 3. Handle RGBA/transparency safely before converting to grayscale
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            bg = Image.new('RGB', img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[3])
+            img = bg.convert('L')
+        else:
+            img = img.convert('L')
 
         # 4. Upscale if too small (improves OCR on tiny images)
         width, height = img.size
