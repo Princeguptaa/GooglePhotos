@@ -7,14 +7,14 @@ from config import Config
 
 # Maximum pixel dimension (longest side) fed to Tesseract.
 # Phone photos are often 3000-4000px — Tesseract time scales roughly
-# quadratically with pixel count, so downsizing to 1500px gives a
-# ~4-8x speedup with minimal OCR quality loss for document text.
-OCR_MAX_DIMENSION = 1500
+# quadratically with pixel count, so downsizing to 1000px gives a
+# massive speedup with minimal OCR quality loss for document text.
+OCR_MAX_DIMENSION = 1000
 
 # Hard timeout in seconds for a single Tesseract invocation.
 # On Render free tier (0.1 CPU), large images can take 30-60s+.
-# Failing fast is better than a frozen spinner.
-OCR_TIMEOUT_SECONDS = 20
+# Failing fast is better than a frozen spinner, but 20s was too tight for complex tables.
+OCR_TIMEOUT_SECONDS = 40
 
 
 def extract_text(image_path: str) -> str:
