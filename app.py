@@ -124,8 +124,14 @@ def upload():
         try:
             ocr_text = engine.extract_text(saved_path)
         except Exception as e:
-            errors.append(f"OCR failed for {file.filename}: {str(e)}")
-            continue
+            ocr_text = ''
+            errors.append(f"OCR couldn't process {file.filename} — try a smaller or clearer photo.")
+        
+        if not ocr_text:
+            # Still save the image so it appears in the library,
+            # but warn the tester that text extraction failed
+            if not any(file.filename in err for err in errors):
+                errors.append(f"No text could be extracted from {file.filename}.")
             
         doc = {
             'id': image_id,
