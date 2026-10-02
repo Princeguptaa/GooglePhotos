@@ -283,6 +283,74 @@ document.addEventListener('DOMContentLoaded', () => {
         return div;
     }
 
+    let pollInterval = null;
+
+    function startPolling() {
+        if (!pollInterval) {
+            pollInterval = setInterval(pollProcessingImages, 2000);
+        }
+    }
+
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+    }
+
+    async function pollProcessingImages() {
+        const processingItems = Array.from(thumbnailStrip.querySelectorAll('.thumbnail-item[data-status="processing"]'));
+        if (processingItems.length === 0) {
+            stopPolling();
+            return;
+        }
+
+        const ids = processingItems.map(item => item.id.replace('thumb-', ''));
+        
+        try {
+            const response = await fetch('/api/ocr-status-batch', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getSessionHeaders()
+                },
+                body: JSON.stringify({ ids: ids }),
+                credentials: 'same-origin'
+            });
+            const data = await response.json();
+            
+            let anyUpdated = false;
+            for (const [id, info] of Object.entries(data)) {
+                if (info.status !== 'processing') {
+                    anyUpdated = true;
+                    const itemDiv = document.getElementById(`thumb-${id}`);
+                    if (itemDiv) {
+                        itemDiv.dataset.status = info.status;
+                        const statusDiv = itemDiv.querySelector('.thumbnail-status');
+                        if (info.status === 'error') {
+                            statusDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation status-warning" title="${escapeHtml(info.error_message || 'OCR failed')}" style="cursor: pointer;"></i>`;
+                            statusDiv.style.color = 'var(--warning)';
+                            statusDiv.onclick = (e) => {
+                                e.stopPropagation();
+                                alert(`Error: ${info.error_message || 'OCR failed'}`);
+                            };
+                        } else if (info.has_ocr_text) {
+                            statusDiv.innerHTML = '<i class="fa-solid fa-check status-success"></i>';
+                        } else {
+                            statusDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation status-warning" title="No text found"></i>';
+                            statusDiv.style.color = 'var(--warning)';
+                        }
+                    }
+                }
+            }
+            if (anyUpdated && searchInput.value.trim().length >= 2) {
+                performSearch(searchInput.value.trim());
+            }
+        } catch (error) {
+            console.error('Failed to poll status:', error);
+        }
+    }
+
     async function loadLibrary() {
         try {
             const response = await fetch('/api/library', {
@@ -319,9 +387,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     deleteImage(item.id);
                 };
                 
+                div.dataset.status = item.status;
+                
                 const statusDiv = document.createElement('div');
                 statusDiv.className = 'thumbnail-status';
-                if (item.has_ocr_text) {
+                
+                if (item.status === 'processing') {
+                    statusDiv.innerHTML = '<i class="fa-solid fa-spinner status-loading fa-spin"></i>';
+                } else if (item.status === 'error') {
+                    statusDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation status-warning" title="${escapeHtml(item.error_message || 'OCR failed')}" style="cursor: pointer;"></i>`;
+                    statusDiv.style.color = 'var(--warning)';
+                    statusDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        alert(`Error: ${item.error_message || 'OCR failed'}`);
+                    };
+                } else if (item.has_ocr_text) {
                     statusDiv.innerHTML = '<i class="fa-solid fa-check status-success"></i>';
                 } else {
                     statusDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation status-warning" title="No text found"></i>';
@@ -336,6 +416,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 thumbnailStrip.appendChild(div);
             });
+            
+            startPolling();
         } catch (error) {
             console.error('Failed to load library:', error);
         }

@@ -2,10 +2,13 @@ import os
 import uuid
 from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, send_file, session
+from concurrent.futures import ThreadPoolExecutor
 from config import Config
 from storage import db
 from ocr import engine
 from search import ranker
+
+executor = ThreadPoolExecutor(max_workers=4)
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -121,26 +124,28 @@ def upload():
         
         file.save(saved_path)
         
-        try:
-            ocr_text = engine.extract_text(saved_path)
-        except Exception as e:
-            ocr_text = ''
-            errors.append(f"OCR couldn't process {file.filename} — try a smaller or clearer photo.")
-        
-        if not ocr_text:
-            # Still save the image so it appears in the library,
-            # but warn the tester that text extraction failed
-            if not any(file.filename in err for err in errors):
-                errors.append(f"No text could be extracted from {file.filename}.")
-            
         doc = {
             'id': image_id,
             'session_id': session_id,
             'filename': saved_filename,
             'original_name': file.filename,
-            'ocr_text': ocr_text
+            'ocr_text': '',
+            'status': 'processing',
+            'error_message': ''
         }
         db.insert_document(doc)
+        
+        def process_image(img_id, s_id, path):
+            try:
+                ocr_text = engine.extract_text(path)
+                if not ocr_text:
+                    db.update_document_status(img_id, s_id, 'error', "No text could be extracted. Try a clearer photo.")
+                else:
+                    db.update_document_text(img_id, s_id, ocr_text)
+            except Exception as e:
+                db.update_document_status(img_id, s_id, 'error', "OCR failed. Try a smaller or clearer photo.")
+
+        executor.submit(process_image, image_id, session_id, saved_path)
         
         thumbnail_url = f"/api/images/{image_id}"
 
@@ -148,8 +153,8 @@ def upload():
             "image_id": image_id,
             "original_name": file.filename,
             "thumbnail_url": thumbnail_url,
-            "ocr_preview": ocr_text[:100] + ("..." if len(ocr_text) > 100 else ""),
-            "status": "ready"
+            "ocr_preview": "",
+            "status": "processing"
         })
         
     return jsonify({"uploaded": uploaded, "errors": errors}), 200
@@ -198,8 +203,29 @@ def library():
             "id": doc['id'],
             "thumbnail_url": f"/api/images/{doc['id']}",
             "original_name": doc['original_name'],
-            "has_ocr_text": bool(doc['ocr_text'].strip())
+            "has_ocr_text": bool(doc['ocr_text'].strip()),
+            "status": doc.get('status', 'ready'),
+            "error_message": doc.get('error_message', '')
         })
+    return jsonify(results), 200
+
+@app.route('/api/ocr-status-batch', methods=['POST'])
+def ocr_status_batch():
+    session_id = get_current_session_id()
+    data = request.get_json()
+    if not data or 'ids' not in data:
+        return jsonify({"error": "Invalid request"}), 400
+    
+    ids = data['ids']
+    results = {}
+    for image_id in ids:
+        doc = db.get_document(image_id, session_id)
+        if doc:
+            results[image_id] = {
+                "status": doc.get('status', 'ready'),
+                "has_ocr_text": bool(doc['ocr_text'].strip()),
+                "error_message": doc.get('error_message', '')
+            }
     return jsonify(results), 200
 
 @app.route('/api/images/<image_id>', methods=['GET'])

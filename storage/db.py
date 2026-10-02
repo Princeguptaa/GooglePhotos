@@ -30,6 +30,10 @@ def init_db() -> None:
             columns = [row['name'] for row in cursor.fetchall()]
             if 'session_id' not in columns:
                 conn.execute("ALTER TABLE documents ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'")
+            if 'status' not in columns:
+                conn.execute("ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'ready'")
+            if 'error_message' not in columns:
+                conn.execute("ALTER TABLE documents ADD COLUMN error_message TEXT DEFAULT ''")
                 
             conn.execute('CREATE INDEX IF NOT EXISTS idx_documents_session ON documents(session_id, uploaded_at DESC)')
 
@@ -43,9 +47,9 @@ def insert_document(doc: dict) -> str:
     with closing(get_connection()) as conn:
         with conn:
             conn.execute('''
-                INSERT INTO documents (id, session_id, filename, original_name, ocr_text)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (doc['id'], session_id, doc['filename'], doc['original_name'], doc['ocr_text']))
+                INSERT INTO documents (id, session_id, filename, original_name, ocr_text, status, error_message)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (doc['id'], session_id, doc['filename'], doc['original_name'], doc.get('ocr_text', ''), doc.get('status', 'ready'), doc.get('error_message', '')))
     return doc['id']
 
 def get_all_documents(session_id: str | None = None) -> list[dict]:
@@ -112,3 +116,19 @@ def get_document_count(session_id: str | None = None) -> int:
             else:
                 row = conn.execute('SELECT COUNT(*) FROM documents').fetchone()
             return row[0] if row else 0
+
+def update_document_text(doc_id: str, session_id: str, text: str) -> None:
+    with closing(get_connection()) as conn:
+        with conn:
+            conn.execute('''
+                UPDATE documents SET ocr_text = ?, status = 'ready', error_message = ''
+                WHERE id = ? AND session_id = ?
+            ''', (text, doc_id, session_id))
+
+def update_document_status(doc_id: str, session_id: str, status: str, error_message: str = '') -> None:
+    with closing(get_connection()) as conn:
+        with conn:
+            conn.execute('''
+                UPDATE documents SET status = ?, error_message = ?
+                WHERE id = ? AND session_id = ?
+            ''', (status, error_message, doc_id, session_id))

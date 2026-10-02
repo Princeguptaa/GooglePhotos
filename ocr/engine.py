@@ -2,7 +2,7 @@ import os
 import re
 import signal
 import pytesseract
-from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageFilter, ImageOps, ImageEnhance, UnidentifiedImageError
 from config import Config
 
 # Maximum pixel dimension (longest side) fed to Tesseract.
@@ -55,14 +55,16 @@ def extract_text(image_path: str) -> str:
         if width < 1000:
             img = img.resize((width * 2, height * 2), Image.Resampling.LANCZOS)
 
-        # 5. Sharpen
+        # 5. Contrast enhancement and Sharpen (helps with low-contrast phone screenshots)
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(2.0)
         img = img.filter(ImageFilter.SHARPEN)
 
         # 6. Configure Tesseract
         if getattr(Config, 'TESSERACT_CMD', None):
             pytesseract.pytesseract.tesseract_cmd = Config.TESSERACT_CMD
 
-        tesseract_config = getattr(Config, 'TESSERACT_CONFIG', '--oem 3 --psm 6')
+        tesseract_config = getattr(Config, 'TESSERACT_CONFIG', f"--oem {getattr(Config, 'TESSERACT_OEM', 3)} --psm {getattr(Config, 'TESSERACT_PSM', 3)}")
 
         # 7. Run Tesseract with hard timeout
         raw_text = pytesseract.image_to_string(
