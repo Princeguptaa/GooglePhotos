@@ -39,6 +39,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadSampleBtn = document.getElementById('load-sample-btn');
     const newSessionBtn = document.getElementById('new-session-btn');
     const copySessionBtn = document.getElementById('copy-session-btn');
+    const sessionMenuToggle = document.getElementById('session-menu-toggle');
+    const sessionMenuDropdown = document.getElementById('session-menu-dropdown');
+    
+    // Session menu toggle
+    if (sessionMenuToggle && sessionMenuDropdown) {
+        sessionMenuToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = !sessionMenuDropdown.classList.contains('hidden');
+            sessionMenuDropdown.classList.toggle('hidden');
+            sessionMenuToggle.setAttribute('aria-expanded', !isOpen);
+        });
+        document.addEventListener('click', () => {
+            sessionMenuDropdown.classList.add('hidden');
+            sessionMenuToggle.setAttribute('aria-expanded', 'false');
+        });
+        sessionMenuDropdown.addEventListener('click', () => {
+            sessionMenuDropdown.classList.add('hidden');
+            sessionMenuToggle.setAttribute('aria-expanded', 'false');
+        });
+    }
     
     const searchInput = document.getElementById('search-input');
     const resultsArea = document.getElementById('results-area');

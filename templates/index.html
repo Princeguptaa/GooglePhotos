@@ -24,14 +24,21 @@
             <p class="tagline">Upload images, search by text, find instantly.</p>
             <div class="session-badge-container">
                 <span class="session-badge" title="Your documents are private to this browser session">
-                    <i class="fa-solid fa-user-shield"></i> Private Session
+                    <i class="fa-solid fa-lock"></i> Private
                 </span>
-                <button id="copy-session-btn" class="session-action-btn" title="Copy shareable link to open this session on other devices or tabs">
-                    <i class="fa-solid fa-link"></i> Copy Link
-                </button>
-                <button id="new-session-btn" class="session-action-btn" title="Start a fresh empty session">
-                    <i class="fa-solid fa-arrow-rotate-right"></i> Reset Session
-                </button>
+                <div class="session-menu-wrapper">
+                    <button id="session-menu-toggle" class="session-menu-btn" title="Session options" aria-label="Session options" aria-expanded="false">
+                        <i class="fa-solid fa-ellipsis"></i>
+                    </button>
+                    <div id="session-menu-dropdown" class="session-dropdown hidden">
+                        <button id="copy-session-btn" class="session-dropdown-item" title="Copy shareable link">
+                            <i class="fa-solid fa-link"></i> Copy Link
+                        </button>
+                        <button id="new-session-btn" class="session-dropdown-item" title="Start a fresh empty session">
+                            <i class="fa-solid fa-arrow-rotate-right"></i> Reset Session
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </header>
