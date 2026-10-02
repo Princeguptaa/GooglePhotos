@@ -8,11 +8,15 @@ from storage import db
 
 @pytest.fixture
 def client():
+    orig_db = Config.DATABASE_PATH
+    orig_uploads = Config.UPLOAD_FOLDER
+    
     # Setup test config
     app.config['TESTING'] = True
     app.config['DATABASE_PATH'] = 'instance/test_api_documents.db'
     app.config['UPLOAD_FOLDER'] = 'static/test_api_uploads'
     Config.DATABASE_PATH = app.config['DATABASE_PATH'] # Keep db module in sync
+    Config.UPLOAD_FOLDER = app.config['UPLOAD_FOLDER']
     
     # Ensure dirs exist
     os.makedirs(os.path.dirname(app.config['DATABASE_PATH']), exist_ok=True)
@@ -31,6 +35,11 @@ def client():
         os.remove(app.config['DATABASE_PATH'])
     if os.path.exists(app.config['UPLOAD_FOLDER']):
         shutil.rmtree(app.config['UPLOAD_FOLDER'])
+    Config.DATABASE_PATH = orig_db
+    Config.UPLOAD_FOLDER = orig_uploads
+    app.config['DATABASE_PATH'] = orig_db
+    app.config['UPLOAD_FOLDER'] = orig_uploads
+    db.init_db()
 
 def test_upload_valid_image(client):
     mock_img_path = os.path.join('mock_data', 'test_payment.png')
@@ -163,3 +172,63 @@ def test_delete_removes(client):
     
     lib_resp = client.get('/api/library')
     assert len(lib_resp.get_json()) == 0
+
+def test_session_isolation_library_and_search(client):
+    mock_img_path = os.path.join('mock_data', 'test_payment.png')
+    if not os.path.exists(mock_img_path):
+        pytest.skip(f"{mock_img_path} not found")
+
+    # Client A uploads with session header user-a
+    with open(mock_img_path, 'rb') as f:
+        resp_a = client.post(
+            '/api/upload', 
+            data={'files': (f, 'payment_a.png')}, 
+            headers={'X-Session-ID': 'user-a'}
+        )
+    assert resp_a.status_code == 200
+    doc_a_id = resp_a.get_json()['uploaded'][0]['image_id']
+
+    # Client B uploads with session header user-b
+    with open(mock_img_path, 'rb') as f:
+        resp_b = client.post(
+            '/api/upload', 
+            data={'files': (f, 'payment_b.png')}, 
+            headers={'X-Session-ID': 'user-b'}
+        )
+    assert resp_b.status_code == 200
+    doc_b_id = resp_b.get_json()['uploaded'][0]['image_id']
+
+    # User A's library contains only doc A
+    lib_a = client.get('/api/library', headers={'X-Session-ID': 'user-a'}).get_json()
+    assert len(lib_a) == 1
+    assert lib_a[0]['id'] == doc_a_id
+
+    # User B's library contains only doc B
+    lib_b = client.get('/api/library', headers={'X-Session-ID': 'user-b'}).get_json()
+    assert len(lib_b) == 1
+    assert lib_b[0]['id'] == doc_b_id
+
+    # Cross-session access blocked
+    res_b_view = client.get(f'/api/images/{doc_a_id}', headers={'X-Session-ID': 'user-b'})
+    assert res_b_view.status_code == 404
+
+    res_b_ocr = client.get(f'/api/images/{doc_a_id}/ocr', headers={'X-Session-ID': 'user-b'})
+    assert res_b_ocr.status_code == 404
+
+    res_b_del = client.delete(f'/api/images/{doc_a_id}', headers={'X-Session-ID': 'user-b'})
+    assert res_b_del.status_code == 404
+
+    # User A can still access their doc
+    res_a_view = client.get(f'/api/images/{doc_a_id}', headers={'X-Session-ID': 'user-a'})
+    assert res_a_view.status_code == 200
+
+def test_load_samples_endpoint(client):
+    response = client.post('/api/load-samples', headers={'X-Session-ID': 'sample-user'})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert 'loaded' in data
+    assert data['loaded'] >= 1
+
+    lib = client.get('/api/library', headers={'X-Session-ID': 'sample-user'}).get_json()
+    assert len(lib) == data['loaded']
+

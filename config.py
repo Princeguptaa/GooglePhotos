@@ -20,7 +20,7 @@ class Config:
     TESSERACT_OEM = 3             # OCR engine mode
 
     # Search
-    MIN_SCORE_THRESHOLD = 0.05    # Below this → no match
+    MIN_SCORE_THRESHOLD = 0.20    # Below this → no match (filters incidental noise)
     SNIPPET_MAX_LENGTH = 150      # Chars around best match
     TFIDF_WEIGHT = 0.7
     FUZZY_WEIGHT = 0.3

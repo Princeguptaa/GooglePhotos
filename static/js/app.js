@@ -1,9 +1,44 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Session Identification & Persistence:
+    // 1. URL parameter ?session_id=... (enables cross-device sync & link restoration)
+    const urlParams = new URLSearchParams(window.location.search);
+    let sessionId = urlParams.get('session_id');
+
+    // 2. Persistent localStorage (survives page refreshes, tab close, and browser restarts)
+    if (!sessionId) {
+        sessionId = localStorage.getItem('ocr_session_id');
+    }
+
+    // 3. Server-injected meta tag (only for first-time visitors with empty localStorage)
+    if (!sessionId) {
+        const metaSession = document.querySelector('meta[name="session-id"]');
+        sessionId = metaSession ? metaSession.getAttribute('content') : null;
+    }
+
+    // 4. Client-side fallback generator
+    if (!sessionId) {
+        sessionId = 'sess_' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+    }
+
+    // Lock into localStorage for future refreshes
+    localStorage.setItem('ocr_session_id', sessionId);
+
+    function getSessionHeaders(customHeaders = {}) {
+        return {
+            'X-Session-ID': sessionId,
+            ...customHeaders
+        };
+    }
+
     // DOM Elements
     const dropArea = document.getElementById('drop-area');
     const fileInput = document.getElementById('file-input');
     const browseBtn = document.getElementById('browse-btn');
     const thumbnailStrip = document.getElementById('thumbnail-strip');
+    const libraryCount = document.getElementById('library-count');
+    const loadSampleBtn = document.getElementById('load-sample-btn');
+    const newSessionBtn = document.getElementById('new-session-btn');
+    const copySessionBtn = document.getElementById('copy-session-btn');
     
     const searchInput = document.getElementById('search-input');
     const resultsArea = document.getElementById('results-area');
@@ -23,10 +58,86 @@ document.addEventListener('DOMContentLoaded', () => {
     loadLibrary();
 
     // ---------------------------------
-    // 1. Upload Functionality
+    // 1. Session Management
     // ---------------------------------
 
-    // Browse Button
+    if (copySessionBtn) {
+        copySessionBtn.addEventListener('click', async () => {
+            const shareUrl = `${window.location.origin}${window.location.pathname}?session_id=${encodeURIComponent(sessionId)}`;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(shareUrl);
+                } else {
+                    const tempInput = document.createElement('textarea');
+                    tempInput.value = shareUrl;
+                    document.body.appendChild(tempInput);
+                    tempInput.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempInput);
+                }
+                showToast('Session link copied! Open on another device or tab to access this library.', 'success');
+            } catch (err) {
+                console.error('Clipboard copy failed:', err);
+                prompt('Copy this link to access your session on another device:', shareUrl);
+            }
+        });
+    }
+
+    if (newSessionBtn) {
+        newSessionBtn.addEventListener('click', async () => {
+            if (!confirm('Start a fresh session? This creates a new private workspace for your documents.')) return;
+            try {
+                const response = await fetch('/api/session/reset', { 
+                    method: 'POST', 
+                    credentials: 'same-origin' 
+                });
+                const data = await response.json();
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    localStorage.setItem('ocr_session_id', sessionId);
+                    // Clean URL query param if present
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                    showToast('New session started!', 'success');
+                    searchInput.value = '';
+                    showEmptyState('Start searching to see results', 'fa-magnifying-glass-chart');
+                    loadLibrary();
+                }
+            } catch (e) {
+                console.error('Session reset failed:', e);
+                showToast('Failed to reset session.', 'error');
+            }
+        });
+    }
+
+    if (loadSampleBtn) {
+        loadSampleBtn.addEventListener('click', async () => {
+            loadSampleBtn.disabled = true;
+            loadSampleBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...';
+            try {
+                const response = await fetch('/api/load-samples', {
+                    method: 'POST',
+                    headers: getSessionHeaders(),
+                    credentials: 'same-origin'
+                });
+                const data = await response.json();
+                showToast(data.message || 'Sample documents loaded.', 'success');
+                loadLibrary();
+            } catch (e) {
+                console.error('Sample loading failed:', e);
+                showToast('Failed to load sample documents.', 'error');
+            } finally {
+                loadSampleBtn.disabled = false;
+                loadSampleBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Load Sample Docs';
+            }
+        });
+    }
+
+    // ---------------------------------
+    // 2. Upload Functionality
+    // ---------------------------------
+
     browseBtn.addEventListener('click', () => {
         fileInput.click();
     });
@@ -84,7 +195,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/upload', {
                 method: 'POST',
-                body: formData
+                headers: getSessionHeaders(),
+                body: formData,
+                credentials: 'same-origin'
             });
             const data = await response.json();
 
@@ -93,28 +206,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 data.errors.forEach(err => showToast(err, 'error'));
             }
 
+            // Clean up temp thumbs
+            fileIds.forEach(id => {
+                const el = document.getElementById(`thumb-${id}`);
+                if (el) el.remove();
+            });
+
             // Replace temp thumbnails with real ones or remove if failed
             if (data.uploaded && data.uploaded.length > 0) {
                 showToast(`Successfully uploaded ${data.uploaded.length} image(s)`, 'success');
-                // Remove temp thumbs
-                fileIds.forEach(id => {
-                    const el = document.getElementById(`thumb-${id}`);
-                    if (el) el.remove();
-                });
-                
-                // Add actual uploaded items
-                data.uploaded.forEach(item => {
-                    addThumbnailToStrip(item);
-                });
-            } else {
-                // If nothing uploaded, remove temp thumbs
-                fileIds.forEach(id => {
-                    const el = document.getElementById(`thumb-${id}`);
-                    if (el) el.remove();
-                });
+                loadLibrary(); // Reload library to keep order, count, and status in sync
             }
             
-            // If search is active, we might want to re-search
+            // If search is active, re-search
             if (searchInput.value.trim().length >= 2) {
                 performSearch(searchInput.value.trim());
             }
@@ -132,6 +236,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createThumbnail(id, src, isLoading = false) {
+        // Clear empty state message if present
+        const emptyEl = thumbnailStrip.querySelector('.library-empty');
+        if (emptyEl) emptyEl.remove();
+
         const div = document.createElement('div');
         div.className = 'thumbnail-item';
         div.id = `thumb-${id}`;
@@ -151,67 +259,36 @@ document.addEventListener('DOMContentLoaded', () => {
         div.appendChild(img);
         div.appendChild(statusDiv);
         
-        // Prepend so newest is first
         thumbnailStrip.insertBefore(div, thumbnailStrip.firstChild);
         return div;
     }
 
-    function addThumbnailToStrip(item) {
-        const div = document.createElement('div');
-        div.className = 'thumbnail-item';
-        div.id = `thumb-${item.id || item.image_id}`;
-        
-        const img = document.createElement('img');
-        img.src = item.thumbnail_url;
-        img.alt = item.original_name;
-        
-        // Delete btn
-        const delBtn = document.createElement('div');
-        delBtn.className = 'thumbnail-delete';
-        delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-        delBtn.onclick = (e) => {
-            e.stopPropagation();
-            deleteImage(item.id || item.image_id);
-        };
-        
-        // Status indicator
-        const statusDiv = document.createElement('div');
-        statusDiv.className = 'thumbnail-status';
-        
-        const hasText = item.has_ocr_text !== undefined ? item.has_ocr_text : (item.ocr_preview && item.ocr_preview.length > 0);
-        
-        if (hasText) {
-            statusDiv.innerHTML = '<i class="fa-solid fa-check status-success"></i>';
-        } else {
-            statusDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation status-warning" title="No text found"></i>';
-            statusDiv.style.color = 'var(--warning)';
-        }
-        
-        div.appendChild(img);
-        div.appendChild(delBtn);
-        div.appendChild(statusDiv);
-        
-        // Click to preview
-        div.addEventListener('click', () => openPreview(item.id || item.image_id));
-        
-        thumbnailStrip.insertBefore(div, thumbnailStrip.firstChild);
-    }
-
     async function loadLibrary() {
         try {
-            const response = await fetch('/api/library');
+            const response = await fetch('/api/library', {
+                headers: getSessionHeaders(),
+                credentials: 'same-origin'
+            });
             const data = await response.json();
             
             thumbnailStrip.innerHTML = '';
             
-            // Append sequentially. They are ordered by newest first from backend.
+            if (libraryCount) {
+                libraryCount.textContent = data.length;
+            }
+
+            if (!data || data.length === 0) {
+                thumbnailStrip.innerHTML = '<div class="library-empty">Your library is empty. Upload images above or click "Load Sample Docs" to test.</div>';
+                return;
+            }
+            
             data.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'thumbnail-item';
                 div.id = `thumb-${item.id}`;
                 
                 const img = document.createElement('img');
-                img.src = item.thumbnail_url;
+                img.src = `${item.thumbnail_url}?session_id=${encodeURIComponent(sessionId)}`;
                 img.alt = item.original_name;
                 
                 const delBtn = document.createElement('div');
@@ -248,11 +325,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Are you sure you want to delete this image?')) return;
         
         try {
-            const response = await fetch(`/api/images/${id}`, { method: 'DELETE' });
+            const response = await fetch(`/api/images/${id}`, { 
+                method: 'DELETE',
+                headers: getSessionHeaders(),
+                credentials: 'same-origin'
+            });
             if (response.ok) {
                 const el = document.getElementById(`thumb-${id}`);
                 if (el) el.remove();
                 showToast('Image deleted successfully.', 'success');
+                loadLibrary();
                 
                 // Refresh search if active
                 if (searchInput.value.trim().length >= 2) {
@@ -268,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ---------------------------------
-    // 2. Search Functionality
+    // 3. Search Functionality
     // ---------------------------------
     
     let searchTimeout = null;
@@ -294,7 +376,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function performSearch(query) {
         try {
-            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+                headers: getSessionHeaders(),
+                credentials: 'same-origin'
+            });
             const data = await response.json();
             
             if (data.results && data.results.length > 0) {
@@ -318,7 +403,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const thumb = document.createElement('img');
             thumb.className = 'result-thumb';
-            thumb.src = result.thumbnail_url;
+            thumb.src = `${result.thumbnail_url}?session_id=${encodeURIComponent(sessionId)}`;
+            thumb.alt = 'Document thumbnail';
             
             const content = document.createElement('div');
             content.className = 'result-content';
@@ -396,7 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ---------------------------------
-    // 3. Preview Modal
+    // 4. Preview Modal
     // ---------------------------------
 
     async function openPreview(imageId) {
@@ -404,10 +490,13 @@ document.addEventListener('DOMContentLoaded', () => {
         modalOcrText.textContent = 'Loading...';
         previewModal.classList.add('active');
         
-        modalImage.src = `/api/images/${imageId}`;
+        modalImage.src = `/api/images/${imageId}?session_id=${encodeURIComponent(sessionId)}`;
         
         try {
-            const response = await fetch(`/api/images/${imageId}/ocr`);
+            const response = await fetch(`/api/images/${imageId}/ocr`, {
+                headers: getSessionHeaders(),
+                credentials: 'same-origin'
+            });
             if (response.ok) {
                 const data = await response.json();
                 modalOcrText.textContent = data.ocr_text || 'No text extracted.';
@@ -424,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             modalImage.src = '';
             modalOcrText.textContent = '';
-        }, 300); // wait for transition
+        }, 300);
     }
 
     closeModalBtn.addEventListener('click', closePreview);
@@ -457,3 +546,4 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 4000);
     }
 });
+

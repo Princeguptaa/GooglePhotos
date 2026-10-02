@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OCR Document Search</title>
     <meta name="description" content="Search through your images and documents using OCR-based search.">
+    <meta name="session-id" content="{{ session_id }}">
     
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,6 +22,17 @@
         <div class="header-content">
             <h1>OCR Document Search</h1>
             <p class="tagline">Upload images, search by text, find instantly.</p>
+            <div class="session-badge-container">
+                <span class="session-badge" title="Your documents are private to this browser session">
+                    <i class="fa-solid fa-user-shield"></i> Private Session
+                </span>
+                <button id="copy-session-btn" class="session-action-btn" title="Copy shareable link to open this session on other devices or tabs">
+                    <i class="fa-solid fa-link"></i> Copy Link
+                </button>
+                <button id="new-session-btn" class="session-action-btn" title="Start a fresh empty session">
+                    <i class="fa-solid fa-arrow-rotate-right"></i> Reset Session
+                </button>
+            </div>
         </div>
     </header>
 
@@ -35,7 +47,12 @@
             </div>
             
             <div class="thumbnail-strip-container">
-                <h3>Your Library</h3>
+                <div class="thumbnail-header">
+                    <h3>Your Library <span id="library-count" class="library-count-badge">0</span></h3>
+                    <button id="load-sample-btn" class="btn secondary-btn btn-sm" title="Load sample documents into your session">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Load Sample Docs
+                    </button>
+                </div>
                 <div id="thumbnail-strip" class="thumbnail-strip">
                     <!-- Thumbnails will be injected here -->
                 </div>

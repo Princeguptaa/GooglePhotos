@@ -62,3 +62,21 @@ def test_ranking_order():
     
     # Check doc 1 is first
     assert results[0]['id'] == "1"
+
+def test_exact_amount_scoring_and_distractor_filtering():
+    test_docs = [
+        {"id": "payment", "ocr_text": "Payment Receipt Amount: Rs 6,500 To: Samrat Mehta"},
+        {"id": "distractor_num", "ocr_text": "Payment Receipt Amount: Rs 1,500 To: Vikram Singh"},
+        {"id": "distractor_med", "ocr_text": "Prescription Paracetamol 500mg daily"}
+    ]
+    results = rank("6500", test_docs)
+    
+    # 1. Correct document must score >= 90% (0.90)
+    assert len(results) >= 1
+    top_result = results[0]
+    assert top_result['id'] == "payment"
+    assert top_result['score'] >= 0.90, f"Expected >= 0.90, got {top_result['score']}"
+    
+    # 2. Distractors with incidental digit overlap must be filtered out
+    assert len(results) == 1
+

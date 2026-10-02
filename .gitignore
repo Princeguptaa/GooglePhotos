@@ -26,4 +26,6 @@ venv/
 # Project specific
 instance/
 static/uploads/
+static/test_api_uploads/
 *.db
+.pytest_cache/

@@ -46,3 +46,49 @@ def test_count():
     for d in docs:
         insert_document(d)
     assert get_document_count() == 3
+
+def test_session_isolated_retrieval():
+    doc_a = {'id': 'a-1', 'session_id': 'sess-a', 'filename': 'a.png', 'original_name': 'a.png', 'ocr_text': 'doc a'}
+    doc_b = {'id': 'b-1', 'session_id': 'sess-b', 'filename': 'b.png', 'original_name': 'b.png', 'ocr_text': 'doc b'}
+    insert_document(doc_a)
+    insert_document(doc_b)
+
+    docs_a = get_all_documents('sess-a')
+    docs_b = get_all_documents('sess-b')
+
+    assert len(docs_a) == 1
+    assert docs_a[0]['id'] == 'a-1'
+
+    assert len(docs_b) == 1
+    assert docs_b[0]['id'] == 'b-1'
+
+def test_session_isolated_get_by_id():
+    doc = {'id': 'iso-1', 'session_id': 'alice', 'filename': 'iso.png', 'original_name': 'iso.png', 'ocr_text': 'secret'}
+    insert_document(doc)
+
+    assert get_document('iso-1', 'alice') is not None
+    assert get_document('iso-1', 'bob') is None
+
+def test_session_isolated_delete():
+    doc = {'id': 'del-iso-1', 'session_id': 'alice', 'filename': 'del.png', 'original_name': 'del.png', 'ocr_text': 'secret'}
+    insert_document(doc)
+
+    # Bob tries to delete Alice's doc
+    deleted = delete_document('del-iso-1', 'bob')
+    assert deleted is False
+    assert get_document('del-iso-1', 'alice') is not None
+
+    # Alice deletes her doc
+    deleted = delete_document('del-iso-1', 'alice')
+    assert deleted is True
+    assert get_document('del-iso-1', 'alice') is None
+
+def test_session_isolated_count():
+    insert_document({'id': 'cnt-1', 'session_id': 'user-1', 'filename': '1.png', 'original_name': '1.png', 'ocr_text': '1'})
+    insert_document({'id': 'cnt-2', 'session_id': 'user-1', 'filename': '2.png', 'original_name': '2.png', 'ocr_text': '2'})
+    insert_document({'id': 'cnt-3', 'session_id': 'user-2', 'filename': '3.png', 'original_name': '3.png', 'ocr_text': '3'})
+
+    assert get_document_count('user-1') == 2
+    assert get_document_count('user-2') == 1
+    assert get_document_count() == 3
+
