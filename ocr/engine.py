@@ -7,14 +7,14 @@ from config import Config
 
 # Maximum pixel dimension (longest side) fed to Tesseract.
 # Phone photos are often 3000-4000px — Tesseract time scales roughly
-# quadratically with pixel count, so downsizing to 1000px gives a
+# quadratically with pixel count, so downsizing to 800px gives a
 # massive speedup with minimal OCR quality loss for document text.
-OCR_MAX_DIMENSION = 1000
+OCR_MAX_DIMENSION = 800
 
 # Hard timeout in seconds for a single Tesseract invocation.
 # On Render free tier (0.1 CPU), large images can take 30-60s+.
-# Failing fast is better than a frozen spinner, but 20s was too tight for complex tables.
-OCR_TIMEOUT_SECONDS = 40
+# Failing fast is better than a frozen spinner, but 40s was too tight for complex tables.
+OCR_TIMEOUT_SECONDS = 90
 
 
 def extract_text(image_path: str) -> str:
@@ -57,15 +57,14 @@ def extract_text(image_path: str) -> str:
         else:
             img = img.convert('L')
 
-        # 4. Upscale if too small (improves OCR on tiny images)
-        width, height = img.size
-        if width < 1000:
-            img = img.resize((width * 2, height * 2), Image.Resampling.LANCZOS)
+        # Removed the upscaling block that was unintentionally doubling the size of portrait images 
+        # (whose width is < 1000 even if height is 1000), causing massive Tesseract slowdowns.
 
-        # 5. Contrast enhancement and Sharpen (helps with low-contrast phone screenshots)
+        # 5. Contrast enhancement (helps with low-contrast phone screenshots)
+        # Note: Removed SHARPEN because it severely amplifies JPEG artifacts and background noise,
+        # causing PSM 11 to spend an eternity trying to OCR the resulting speckles.
         enhancer = ImageEnhance.Contrast(img)
         img = enhancer.enhance(2.0)
-        img = img.filter(ImageFilter.SHARPEN)
 
         # 6. Configure Tesseract
         if getattr(Config, 'TESSERACT_CMD', None):

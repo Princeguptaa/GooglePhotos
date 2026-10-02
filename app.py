@@ -21,7 +21,9 @@ try:
 except Exception as e:
     logger.error(f"Failed to execute tesseract --version on startup! Exception: {str(e)}")
 
-executor = ThreadPoolExecutor(max_workers=4)
+# Use max_workers=1 to prevent CPU starvation on Render Free Tier (0.1 CPU).
+# Concurrent Tesseract processes multiply wall-clock time, causing timeouts for all of them.
+executor = ThreadPoolExecutor(max_workers=1)
 
 app = Flask(__name__)
 app.config.from_object(Config)
