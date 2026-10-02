@@ -374,6 +374,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     });
 
+    document.querySelectorAll('.hint-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const query = chip.getAttribute('data-query');
+            if (query && searchInput) {
+                searchInput.value = query;
+                searchInput.focus();
+                performSearch(query);
+            }
+        });
+    });
+
     async function performSearch(query) {
         try {
             const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
