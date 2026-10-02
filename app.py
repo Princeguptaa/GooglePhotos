@@ -1,5 +1,8 @@
 import os
 import uuid
+import logging
+import subprocess
+import time
 from datetime import timedelta
 from flask import Flask, render_template, request, jsonify, send_file, session
 from concurrent.futures import ThreadPoolExecutor
@@ -7,6 +10,16 @@ from config import Config
 from storage import db
 from ocr import engine
 from search import ranker
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Validate Tesseract installation on startup
+try:
+    tesseract_version = subprocess.check_output(['tesseract', '--version'], stderr=subprocess.STDOUT).decode('utf-8')
+    logger.info(f"Tesseract successfully located on startup:\n{tesseract_version}")
+except Exception as e:
+    logger.error(f"Failed to execute tesseract --version on startup! Exception: {str(e)}")
 
 executor = ThreadPoolExecutor(max_workers=4)
 
@@ -135,17 +148,26 @@ def upload():
         }
         db.insert_document(doc)
         
-        def process_image(img_id, s_id, path):
+        def process_image(img_id, s_id, path, filename):
+            logger.info(f"[{img_id}] Starting OCR processing for {filename}")
+            start_time = time.time()
             try:
                 ocr_text = engine.extract_text(path)
+                duration = time.time() - start_time
                 if not ocr_text:
+                    logger.warning(f"[{img_id}] OCR completed in {duration:.2f}s but returned empty text for {filename}.")
                     db.update_document_status(img_id, s_id, 'error', "No text could be extracted. Try a clearer photo.")
                 else:
+                    logger.info(f"[{img_id}] OCR successfully extracted {len(ocr_text)} characters in {duration:.2f}s for {filename}.")
                     db.update_document_text(img_id, s_id, ocr_text)
             except Exception as e:
-                db.update_document_status(img_id, s_id, 'error', "OCR failed. Try a smaller or clearer photo.")
+                duration = time.time() - start_time
+                import traceback
+                logger.error(f"[{img_id}] OCR failed after {duration:.2f}s for {filename}. Exception: {type(e).__name__}: {str(e)}")
+                logger.error(f"[{img_id}] Traceback:\n{traceback.format_exc()}")
+                db.update_document_status(img_id, s_id, 'error', f"OCR failed ({type(e).__name__}). Check logs.")
 
-        executor.submit(process_image, image_id, session_id, saved_path)
+        executor.submit(process_image, image_id, session_id, saved_path, file.filename)
         
         thumbnail_url = f"/api/images/{image_id}"
 

@@ -78,12 +78,11 @@ def extract_text(image_path: str) -> str:
         return cleaned_text
 
     except RuntimeError as e:
-        # pytesseract raises RuntimeError on timeout
         if 'Tesseract process timeout' in str(e):
-            return ''
-        return ''
-    except UnidentifiedImageError:
-        return ''
-    except Exception:
-        return ''
+            raise TimeoutError("Tesseract process timed out") from e
+        raise
+    except UnidentifiedImageError as e:
+        raise ValueError(f"Could not identify or decode image: {e}") from e
+    except Exception as e:
+        raise RuntimeError(f"Unexpected OCR error: {str(e)}") from e
 
