@@ -47,24 +47,18 @@ def extract_text(image_path: str) -> str:
             new_h = int(height * scale)
             img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-        # 3. Handle RGBA/transparency safely before converting to grayscale
+        # 3. Handle RGBA/transparency safely before passing to Tesseract
+        # We flatten to RGB with a white background to avoid transparent areas turning black.
+        # We pass RGB directly to Tesseract and let its highly-optimized internal Otsu binarizer 
+        # handle the grayscale/thresholding, which prevents noise amplification timeouts.
         if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
             if img.mode == 'P':
                 img = img.convert('RGBA')
             bg = Image.new('RGB', img.size, (255, 255, 255))
             bg.paste(img, mask=img.split()[3])
-            img = bg.convert('L')
+            img = bg
         else:
-            img = img.convert('L')
-
-        # Removed the upscaling block that was unintentionally doubling the size of portrait images 
-        # (whose width is < 1000 even if height is 1000), causing massive Tesseract slowdowns.
-
-        # 5. Contrast enhancement (helps with low-contrast phone screenshots)
-        # Note: Removed SHARPEN because it severely amplifies JPEG artifacts and background noise,
-        # causing PSM 11 to spend an eternity trying to OCR the resulting speckles.
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(2.0)
+            img = img.convert('RGB')
 
         # 6. Configure Tesseract
         if getattr(Config, 'TESSERACT_CMD', None):
