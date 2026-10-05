@@ -34,7 +34,7 @@ def rank(query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return []
 
     # Optional TF-IDF for corpus-level term specificity
-    doc_raw_texts = [doc.get('ocr_text', '').lower() for doc in documents]
+    doc_raw_texts = [f"{doc.get('original_name', '')} {doc.get('ocr_text', '')}".lower() for doc in documents]
     doc_norm_texts = [normalize_text(t) for t in doc_raw_texts]
 
     tfidf_scores = [0.0] * len(documents)
@@ -50,13 +50,14 @@ def rank(query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     for idx, doc in enumerate(documents):
         ocr_text = doc.get('ocr_text', '')
+        search_text_for_snippet = f"[{doc.get('original_name', '')}] {ocr_text}" if ocr_text else doc.get('original_name', '')
         raw_text = doc_raw_texts[idx]
         norm_text = doc_norm_texts[idx]
 
         score = _compute_match_score(clean_query, norm_query, q_tokens, raw_text, norm_text, tfidf_scores[idx])
 
         if score >= Config.MIN_SCORE_THRESHOLD:
-            snippet_info = extract_snippet(ocr_text, clean_query, Config.SNIPPET_MAX_LENGTH)
+            snippet_info = extract_snippet(search_text_for_snippet, clean_query, Config.SNIPPET_MAX_LENGTH)
             matched_terms = _extract_matched_terms(q_tokens, norm_text, raw_text)
             results.append({
                 'id': doc.get('id'),

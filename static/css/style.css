@@ -441,6 +441,34 @@ body {
     box-shadow: var(--shadow-sm);
 }
 
+.upload-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px;
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.btn-secondary:hover {
+    background: var(--border-color);
+}
+
 
 /* ════════════════════════════════════════════════════════
    PHOTO LIBRARY GRID
@@ -509,7 +537,8 @@ body {
 .photo-card img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    background-color: var(--bg-body);
     display: block;
 }
 

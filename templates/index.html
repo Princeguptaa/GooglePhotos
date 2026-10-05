@@ -29,10 +29,7 @@
             </div>
             <div class="header-right">
                 <div class="session-controls">
-                    <button id="load-sample-btn" class="header-btn" title="Load sample documents to try searching">
-                        <span class="material-symbols-rounded">auto_awesome</span>
-                        <span class="header-btn-label">Load samples</span>
-                    </button>
+
                     <div class="session-menu-wrapper">
                         <button id="session-menu-toggle" class="header-icon-btn" title="Session options" aria-label="Session options" aria-expanded="false">
                             <span class="material-symbols-rounded">more_vert</span>
@@ -89,7 +86,13 @@
                 <p class="drop-title">Add documents</p>
                 <p class="drop-subtitle">Drag & drop photos of documents, receipts, or prescriptions</p>
                 <input type="file" id="file-input" multiple accept="image/png, image/jpeg, image/jpg, image/webp" hidden>
-                <button id="browse-btn" class="btn-upload">Choose photos</button>
+                <div class="upload-actions">
+                    <button id="browse-btn" class="btn-upload">Choose photos</button>
+                    <button id="load-sample-btn" class="btn-secondary" title="Load sample documents to try searching">
+                        <span class="material-symbols-rounded">auto_awesome</span>
+                        Load samples
+                    </button>
+                </div>
             </div>
         </section>
 
