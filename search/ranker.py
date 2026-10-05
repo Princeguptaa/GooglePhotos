@@ -5,6 +5,18 @@ from sklearn.metrics.pairwise import cosine_similarity
 from rapidfuzz import fuzz, process
 from config import Config
 
+SYNONYMS = {
+    "addhar": ["aadhaar", "uidai"],
+    "aadhar": ["aadhaar", "uidai"],
+    "price": ["invoice", "receipt", "total", "rs", "amount"],
+    "item": ["invoice", "receipt", "total", "rs", "amount"],
+    "bill": ["invoice", "receipt", "total", "rs", "amount"],
+    "resume": ["skills", "experience", "education", "university", "cgpa", "cv"],
+    "cv": ["skills", "experience", "education", "university", "cgpa", "resume"],
+    "marksheet": ["semester", "university", "cgpa", "roll", "degree"],
+    "medicine": ["prescription", "dr", "patient", "tablet", "mg", "pharmacy"]
+}
+
 def normalize_text(text: str) -> str:
     """Normalizes text for matching by lowercasing, collapsing spaces,
     and stripping currency symbols and number formatting commas."""
@@ -111,9 +123,17 @@ def _compute_match_score(clean_query: str, norm_query: str, q_tokens: List[str],
             if q_tok in doc_words or re.search(r'\b' + re.escape(q_tok) + r'\b', norm_text):
                 tok_score = 1.0
             else:
-                # Substring check for words
-                if len(q_tok) >= 3 and any(q_tok in w for w in doc_words if not w.isdigit()):
-                    tok_score = 0.85
+                # Check synonyms
+                if q_tok in SYNONYMS:
+                    for syn in SYNONYMS[q_tok]:
+                        if syn in doc_words or re.search(r'\b' + re.escape(syn) + r'\b', norm_text):
+                            tok_score = 0.95
+                            break
+                            
+                if tok_score == 0.0:
+                    # Substring check for words
+                    if len(q_tok) >= 3 and any(q_tok in w for w in doc_words if not w.isdigit()):
+                        tok_score = 0.85
                 else:
                     # Fuzzy match against non-digit words
                     non_digit_words = [w for w in doc_words if not w.isdigit()]
@@ -163,16 +183,21 @@ def _extract_matched_terms(q_tokens: List[str], norm_text: str, raw_text: str) -
     matched = []
     doc_words = set(re.sub(r'[^\w]', '', w) for w in norm_text.split())
     for q_tok in q_tokens:
-        if q_tok.isdigit():
-            # Check for exact digit match (with optional commas)
-            pattern = r'\b' + ',?'.join(q_tok) + r'\b'
-            if re.search(pattern, norm_text) or re.search(pattern, raw_text):
-                matched.append(q_tok)
-        else:
-            if q_tok in doc_words or re.search(r'\b' + re.escape(q_tok) + r'\b', norm_text):
-                matched.append(q_tok)
-            elif len(q_tok) >= 3 and any(q_tok in w for w in doc_words if not w.isdigit()):
-                matched.append(q_tok)
+        toks_to_check = [q_tok]
+        if q_tok in SYNONYMS:
+            toks_to_check.extend(SYNONYMS[q_tok])
+        
+        for tok in toks_to_check:
+            if tok.isdigit():
+                # Check for exact digit match (with optional commas)
+                pattern = r'\b' + ',?'.join(tok) + r'\b'
+                if re.search(pattern, norm_text) or re.search(pattern, raw_text):
+                    if q_tok not in matched: matched.append(q_tok)
+            else:
+                if tok in doc_words or re.search(r'\b' + re.escape(tok) + r'\b', norm_text):
+                    if q_tok not in matched: matched.append(q_tok)
+                elif len(tok) >= 3 and any(tok in w for w in doc_words if not w.isdigit()):
+                    if q_tok not in matched: matched.append(q_tok)
     return matched
 
 def extract_snippet(ocr_text: str, query: str, max_len: int = 150) -> Dict[str, Any]:
@@ -227,8 +252,42 @@ def extract_snippet(ocr_text: str, query: str, max_len: int = 150) -> Dict[str, 
                         best_match_len = len(best_word[0])
 
     if best_pos == -1:
+        # Check synonyms
+        for q_tok in q_tokens:
+            if q_tok in SYNONYMS:
+                for syn in SYNONYMS[q_tok]:
+                    pos = ocr_lower.find(syn)
+                    if pos != -1:
+                        best_pos = pos
+                        best_match_len = len(syn)
+                        break
+            if best_pos != -1:
+                break
+
+    if best_pos == -1:
         snippet_text = ocr_text[:max_len]
-        return {"text": snippet_text + ("..." if len(ocr_text) > max_len else ""), "highlight_ranges": []}
+        
+        # Calculate highlight ranges relative to final_snippet for early return
+        highlight_ranges = []
+        snippet_lower = snippet_text.lower()
+        for q_tok in q_tokens:
+            toks_to_highlight = [q_tok]
+            if q_tok in SYNONYMS:
+                toks_to_highlight.extend(SYNONYMS[q_tok])
+                
+            for tok in toks_to_highlight:
+                try:
+                    if tok.isdigit():
+                        pattern = r'\b' + ',?'.join(tok) + r'\b'
+                        for m in re.finditer(pattern, snippet_lower):
+                            highlight_ranges.append([m.start(), m.end()])
+                    else:
+                        for m in re.finditer(re.escape(tok), snippet_lower):
+                            highlight_ranges.append([m.start(), m.end()])
+                except re.error:
+                    pass
+        
+        return {"text": snippet_text + ("..." if len(ocr_text) > max_len else ""), "highlight_ranges": highlight_ranges}
 
     # Extract snippet window around best_pos
     half_len = max_len // 2
@@ -255,16 +314,21 @@ def extract_snippet(ocr_text: str, query: str, max_len: int = 150) -> Dict[str, 
     snippet_lower = final_snippet.lower()
 
     for q_tok in q_tokens:
-        try:
-            if q_tok.isdigit():
-                pattern = r'\b' + ',?'.join(q_tok) + r'\b'
-                for m in re.finditer(pattern, snippet_lower):
-                    highlight_ranges.append([m.start(), m.end()])
-            else:
-                for m in re.finditer(re.escape(q_tok), snippet_lower):
-                    highlight_ranges.append([m.start(), m.end()])
-        except re.error:
-            pass
+        toks_to_highlight = [q_tok]
+        if q_tok in SYNONYMS:
+            toks_to_highlight.extend(SYNONYMS[q_tok])
+            
+        for tok in toks_to_highlight:
+            try:
+                if tok.isdigit():
+                    pattern = r'\b' + ',?'.join(tok) + r'\b'
+                    for m in re.finditer(pattern, snippet_lower):
+                        highlight_ranges.append([m.start(), m.end()])
+                else:
+                    for m in re.finditer(re.escape(tok), snippet_lower):
+                        highlight_ranges.append([m.start(), m.end()])
+            except re.error:
+                pass
 
     return {
         "text": final_snippet,
