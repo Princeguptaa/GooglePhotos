@@ -202,7 +202,8 @@ def search():
             "thumbnail_url": thumbnail_url,
             "score": r['score'],
             "snippet": r['snippet'],
-            "highlight_ranges": r['highlight_ranges']
+            "highlight_ranges": r['highlight_ranges'],
+            "matched_terms": r.get('matched_terms', [])
         })
         
     if not formatted_results:
@@ -223,11 +224,14 @@ def library():
     documents = db.get_all_documents(session_id)
     results = []
     for doc in documents:
+        ocr_text = doc['ocr_text'].strip()
+        ocr_preview = ocr_text[:80] + ('…' if len(ocr_text) > 80 else '') if ocr_text else ''
         results.append({
             "id": doc['id'],
             "thumbnail_url": f"/api/images/{doc['id']}",
             "original_name": doc['original_name'],
-            "has_ocr_text": bool(doc['ocr_text'].strip()),
+            "ocr_preview": ocr_preview,
+            "has_ocr_text": bool(ocr_text),
             "status": doc.get('status', 'ready'),
             "error_message": doc.get('error_message', '')
         })

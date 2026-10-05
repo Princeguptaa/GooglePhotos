@@ -1,48 +1,67 @@
+/* ═══════════════════════════════════════════════════════════
+   Photos — Document Search Prototype
+   Frontend logic: upload, library, search, results, preview
+   ═══════════════════════════════════════════════════════════ */
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Session Identification & Persistence:
-    // 1. URL parameter ?session_id=... (enables cross-device sync & link restoration)
+
+    // ─── Session Identification & Persistence ───
     const urlParams = new URLSearchParams(window.location.search);
     let sessionId = urlParams.get('session_id');
 
-    // 2. Persistent localStorage (survives page refreshes, tab close, and browser restarts)
     if (!sessionId) {
         sessionId = localStorage.getItem('ocr_session_id');
     }
-
-    // 3. Server-injected meta tag (only for first-time visitors with empty localStorage)
     if (!sessionId) {
         const metaSession = document.querySelector('meta[name="session-id"]');
         sessionId = metaSession ? metaSession.getAttribute('content') : null;
     }
-
-    // 4. Client-side fallback generator
     if (!sessionId) {
         sessionId = 'sess_' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
     }
 
-    // Lock into localStorage for future refreshes
     localStorage.setItem('ocr_session_id', sessionId);
 
     function getSessionHeaders(customHeaders = {}) {
-        return {
-            'X-Session-ID': sessionId,
-            ...customHeaders
-        };
+        return { 'X-Session-ID': sessionId, ...customHeaders };
     }
 
-    // DOM Elements
-    const dropArea = document.getElementById('drop-area');
-    const fileInput = document.getElementById('file-input');
-    const browseBtn = document.getElementById('browse-btn');
-    const thumbnailStrip = document.getElementById('thumbnail-strip');
-    const libraryCount = document.getElementById('library-count');
-    const loadSampleBtn = document.getElementById('load-sample-btn');
-    const newSessionBtn = document.getElementById('new-session-btn');
+
+    // ─── DOM References ───
+    const dropArea       = document.getElementById('drop-area');
+    const fileInput      = document.getElementById('file-input');
+    const browseBtn      = document.getElementById('browse-btn');
+    const photoGrid      = document.getElementById('photo-grid');
+    const libraryCount   = document.getElementById('library-count');
+    const loadSampleBtn  = document.getElementById('load-sample-btn');
+    const newSessionBtn  = document.getElementById('new-session-btn');
     const copySessionBtn = document.getElementById('copy-session-btn');
-    const sessionMenuToggle = document.getElementById('session-menu-toggle');
+    const sessionMenuToggle  = document.getElementById('session-menu-toggle');
     const sessionMenuDropdown = document.getElementById('session-menu-dropdown');
-    
-    // Session menu toggle
+    const searchInput    = document.getElementById('search-input');
+    const searchClearBtn = document.getElementById('search-clear-btn');
+    const resultsArea    = document.getElementById('results-area');
+    const previewModal   = document.getElementById('preview-modal');
+    const modalBackdrop  = document.querySelector('.modal-backdrop');
+    const closeModalBtn  = document.querySelector('.close-modal-btn');
+    const modalImage     = document.getElementById('modal-image');
+    const modalOcrText   = document.getElementById('modal-ocr-text');
+    const uploadZone     = document.getElementById('upload-zone');
+    const librarySection = document.getElementById('library-section');
+
+    // Toast Container
+    const toastContainer = document.createElement('div');
+    toastContainer.className = 'toast-container';
+    document.body.appendChild(toastContainer);
+
+    // Initial load
+    loadLibrary();
+
+
+    // ═════════════════════════════════════════════
+    // 1. SESSION MENU
+    // ═════════════════════════════════════════════
+
     if (sessionMenuToggle && sessionMenuDropdown) {
         sessionMenuToggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -54,32 +73,12 @@ document.addEventListener('DOMContentLoaded', () => {
             sessionMenuDropdown.classList.add('hidden');
             sessionMenuToggle.setAttribute('aria-expanded', 'false');
         });
-        sessionMenuDropdown.addEventListener('click', () => {
+        sessionMenuDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
             sessionMenuDropdown.classList.add('hidden');
             sessionMenuToggle.setAttribute('aria-expanded', 'false');
         });
     }
-    
-    const searchInput = document.getElementById('search-input');
-    const resultsArea = document.getElementById('results-area');
-    
-    const previewModal = document.getElementById('preview-modal');
-    const modalBackdrop = document.querySelector('.modal-backdrop');
-    const closeModalBtn = document.querySelector('.close-modal-btn');
-    const modalImage = document.getElementById('modal-image');
-    const modalOcrText = document.getElementById('modal-ocr-text');
-    
-    // Toast Container Setup
-    const toastContainer = document.createElement('div');
-    toastContainer.className = 'toast-container';
-    document.body.appendChild(toastContainer);
-
-    // Initial Load
-    loadLibrary();
-
-    // ---------------------------------
-    // 1. Session Management
-    // ---------------------------------
 
     if (copySessionBtn) {
         copySessionBtn.addEventListener('click', async () => {
@@ -95,38 +94,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.execCommand('copy');
                     document.body.removeChild(tempInput);
                 }
-                showToast('Session link copied! Open on another device or tab to access this library.', 'success');
+                showToast('Link copied — open on another device to access this library', 'success');
             } catch (err) {
                 console.error('Clipboard copy failed:', err);
-                prompt('Copy this link to access your session on another device:', shareUrl);
+                prompt('Copy this link to access your session:', shareUrl);
             }
         });
     }
 
     if (newSessionBtn) {
         newSessionBtn.addEventListener('click', async () => {
-            if (!confirm('Start a fresh session? This creates a new private workspace for your documents.')) return;
+            if (!confirm('Start a fresh session? Your current documents will remain in the previous session.')) return;
             try {
-                const response = await fetch('/api/session/reset', { 
-                    method: 'POST', 
-                    credentials: 'same-origin' 
-                });
+                const response = await fetch('/api/session/reset', { method: 'POST', credentials: 'same-origin' });
                 const data = await response.json();
                 if (data.session_id) {
                     sessionId = data.session_id;
                     localStorage.setItem('ocr_session_id', sessionId);
-                    // Clean URL query param if present
                     if (window.history && window.history.replaceState) {
                         window.history.replaceState({}, document.title, window.location.pathname);
                     }
-                    showToast('New session started!', 'success');
+                    showToast('New session started', 'success');
                     searchInput.value = '';
-                    showEmptyState('Start searching to see results', 'fa-magnifying-glass-chart');
+                    hideResults();
                     loadLibrary();
                 }
             } catch (e) {
                 console.error('Session reset failed:', e);
-                showToast('Failed to reset session.', 'error');
+                showToast('Failed to reset session', 'error');
             }
         });
     }
@@ -134,7 +129,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loadSampleBtn) {
         loadSampleBtn.addEventListener('click', async () => {
             loadSampleBtn.disabled = true;
-            loadSampleBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...';
+            const originalHTML = loadSampleBtn.innerHTML;
+            loadSampleBtn.innerHTML = '<span class="material-symbols-rounded" style="animation:spin 1s linear infinite">progress_activity</span><span class="header-btn-label">Loading…</span>';
             try {
                 const response = await fetch('/api/load-samples', {
                     method: 'POST',
@@ -142,23 +138,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     credentials: 'same-origin'
                 });
                 const data = await response.json();
-                showToast(data.message || 'Sample documents loaded.', 'success');
+                showToast(data.message || 'Sample documents loaded', 'success');
                 loadLibrary();
             } catch (e) {
                 console.error('Sample loading failed:', e);
-                showToast('Failed to load sample documents.', 'error');
+                showToast('Failed to load sample documents', 'error');
             } finally {
                 loadSampleBtn.disabled = false;
-                loadSampleBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Load Sample Docs';
+                loadSampleBtn.innerHTML = originalHTML;
             }
         });
     }
 
-    // ---------------------------------
-    // 2. Upload Functionality
-    // ---------------------------------
 
-    browseBtn.addEventListener('click', () => {
+    // ═════════════════════════════════════════════
+    // 2. UPLOAD FUNCTIONALITY
+    // ═════════════════════════════════════════════
+
+    browseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileInput.click();
+    });
+
+    dropArea.addEventListener('click', () => {
         fileInput.click();
     });
 
@@ -188,29 +190,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dropArea.addEventListener('drop', (e) => {
         const dt = e.dataTransfer;
-        const files = dt.files;
-        if (files.length > 0) {
-            uploadFiles(files);
+        if (dt.files.length > 0) {
+            uploadFiles(dt.files);
         }
     });
 
     async function uploadFiles(files) {
         const formData = new FormData();
-        const fileIds = [];
-
-        // Preview spinners
-        Array.from(files).forEach((file, index) => {
-            const tempId = 'temp-' + Date.now() + '-' + index;
-            fileIds.push(tempId);
+        Array.from(files).forEach(file => {
             formData.append('files', file);
-            
-            // Create loading thumbnail
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = function(e) {
-                createThumbnail(tempId, e.target.result, true);
-            };
         });
+
+        // Show indexing state in the library immediately
+        showIndexingState(files.length);
 
         try {
             const response = await fetch('/api/upload', {
@@ -221,73 +213,59 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await response.json();
 
-            // Handle errors
             if (data.errors && data.errors.length > 0) {
                 data.errors.forEach(err => showToast(err, 'error'));
             }
 
-            // Clean up temp thumbs
-            fileIds.forEach(id => {
-                const el = document.getElementById(`thumb-${id}`);
-                if (el) el.remove();
-            });
-
-            // Replace temp thumbnails with real ones or remove if failed
             if (data.uploaded && data.uploaded.length > 0) {
-                showToast(`Successfully uploaded ${data.uploaded.length} image(s)`, 'success');
-                loadLibrary(); // Reload library to keep order, count, and status in sync
+                showToast(`${data.uploaded.length} photo${data.uploaded.length > 1 ? 's' : ''} added`, 'success');
+                loadLibrary();
+            } else {
+                loadLibrary(); // Reload to clear indexing state
             }
-            
-            // If search is active, re-search
+
+            // Re-search if active
             if (searchInput.value.trim().length >= 2) {
                 performSearch(searchInput.value.trim());
             }
 
         } catch (error) {
             console.error('Upload error:', error);
-            showToast('Upload failed due to network error.', 'error');
-            fileIds.forEach(id => {
-                const el = document.getElementById(`thumb-${id}`);
-                if (el) el.remove();
-            });
+            showToast('Upload failed — check your connection', 'error');
+            loadLibrary();
         }
-        
-        fileInput.value = ''; // Reset
+
+        fileInput.value = '';
     }
 
-    function createThumbnail(id, src, isLoading = false) {
-        // Clear empty state message if present
-        const emptyEl = thumbnailStrip.querySelector('.library-empty');
-        if (emptyEl) emptyEl.remove();
-
-        const div = document.createElement('div');
-        div.className = 'thumbnail-item';
-        div.id = `thumb-${id}`;
-        
-        const img = document.createElement('img');
-        img.src = src;
-        
-        const statusDiv = document.createElement('div');
-        statusDiv.className = 'thumbnail-status';
-        
-        if (isLoading) {
-            statusDiv.innerHTML = '<i class="fa-solid fa-spinner status-loading"></i>';
+    function showIndexingState(count) {
+        // Temporarily show a polished indexing indicator in the grid
+        const indexingEl = document.createElement('div');
+        indexingEl.className = 'library-empty';
+        indexingEl.id = 'indexing-indicator';
+        indexingEl.innerHTML = `
+            <span class="material-symbols-rounded" style="font-size:40px;color:var(--accent);animation:pulseStatus 2s ease-in-out infinite;display:block;margin:0 auto 12px">document_scanner</span>
+            <div style="font-size:15px;font-weight:500;color:var(--text-primary);margin-bottom:4px">Understanding your documents…</div>
+            <div style="font-size:13px;color:var(--text-secondary)">Extracting text · Indexing searchable content</div>
+        `;
+        // Prepend to grid
+        if (photoGrid.firstChild) {
+            photoGrid.insertBefore(indexingEl, photoGrid.firstChild);
         } else {
-            statusDiv.innerHTML = '<i class="fa-solid fa-check status-success"></i>';
+            photoGrid.appendChild(indexingEl);
         }
-        
-        div.appendChild(img);
-        div.appendChild(statusDiv);
-        
-        thumbnailStrip.insertBefore(div, thumbnailStrip.firstChild);
-        return div;
     }
+
+
+    // ═════════════════════════════════════════════
+    // 3. PHOTO LIBRARY
+    // ═════════════════════════════════════════════
 
     let pollInterval = null;
 
     function startPolling() {
         if (!pollInterval) {
-            pollInterval = setInterval(pollProcessingImages, 2000);
+            pollInterval = setInterval(pollProcessingImages, 2500);
         }
     }
 
@@ -299,46 +277,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function pollProcessingImages() {
-        const processingItems = Array.from(thumbnailStrip.querySelectorAll('.thumbnail-item[data-status="processing"]'));
+        const processingItems = Array.from(photoGrid.querySelectorAll('.photo-card[data-status="processing"]'));
         if (processingItems.length === 0) {
             stopPolling();
             return;
         }
 
-        const ids = processingItems.map(item => item.id.replace('thumb-', ''));
-        
+        const ids = processingItems.map(item => item.dataset.docId);
+
         try {
             const response = await fetch('/api/ocr-status-batch', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...getSessionHeaders()
-                },
-                body: JSON.stringify({ ids: ids }),
+                headers: { 'Content-Type': 'application/json', ...getSessionHeaders() },
+                body: JSON.stringify({ ids }),
                 credentials: 'same-origin'
             });
             const data = await response.json();
-            
+
             let anyUpdated = false;
             for (const [id, info] of Object.entries(data)) {
                 if (info.status !== 'processing') {
                     anyUpdated = true;
-                    const itemDiv = document.getElementById(`thumb-${id}`);
-                    if (itemDiv) {
-                        itemDiv.dataset.status = info.status;
-                        const statusDiv = itemDiv.querySelector('.thumbnail-status');
+                    const card = photoGrid.querySelector(`.photo-card[data-doc-id="${id}"]`);
+                    if (card) {
+                        card.dataset.status = info.status;
+                        const statusEl = card.querySelector('.photo-card-status');
                         if (info.status === 'error') {
-                            statusDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation status-warning" title="${escapeHtml(info.error_message || 'OCR failed')}" style="cursor: pointer;"></i>`;
-                            statusDiv.style.color = 'var(--warning)';
-                            statusDiv.onclick = (e) => {
-                                e.stopPropagation();
-                                alert(`Error: ${info.error_message || 'OCR failed'}`);
-                            };
+                            statusEl.className = 'photo-card-status status-error-badge';
+                            statusEl.innerHTML = '<span class="material-symbols-rounded">warning</span>';
+                            statusEl.title = info.error_message || 'Could not extract text';
                         } else if (info.has_ocr_text) {
-                            statusDiv.innerHTML = '<i class="fa-solid fa-check status-success"></i>';
+                            statusEl.className = 'photo-card-status status-ready';
+                            statusEl.innerHTML = '<span class="material-symbols-rounded">check_circle</span>';
+                            // Fade out status after 3s
+                            setTimeout(() => { statusEl.style.opacity = '0'; statusEl.style.transition = 'opacity 0.5s'; }, 3000);
                         } else {
-                            statusDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation status-warning" title="No text found"></i>';
-                            statusDiv.style.color = 'var(--warning)';
+                            statusEl.className = 'photo-card-status status-error-badge';
+                            statusEl.innerHTML = '<span class="material-symbols-rounded">warning</span>';
+                            statusEl.title = 'No text found in this image';
                         }
                     }
                 }
@@ -358,130 +334,166 @@ document.addEventListener('DOMContentLoaded', () => {
                 credentials: 'same-origin'
             });
             const data = await response.json();
-            
-            thumbnailStrip.innerHTML = '';
-            
+
+            photoGrid.innerHTML = '';
+
             if (libraryCount) {
                 libraryCount.textContent = data.length;
             }
 
             if (!data || data.length === 0) {
-                thumbnailStrip.innerHTML = '<div class="library-empty">Your library is empty. Upload images above or click "Load Sample Docs" to test.</div>';
+                photoGrid.innerHTML = `
+                    <div class="library-empty">
+                        <span class="material-symbols-rounded">photo_library</span>
+                        <div>No photos yet</div>
+                        <div style="font-size:13px;margin-top:4px">Upload documents above or load sample docs to get started</div>
+                    </div>
+                `;
                 return;
             }
-            
-            data.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'thumbnail-item';
-                div.id = `thumb-${item.id}`;
-                
+
+            let hasProcessing = false;
+
+            data.forEach((item, index) => {
+                const card = document.createElement('div');
+                card.className = 'photo-card';
+                card.dataset.docId = item.id;
+                card.dataset.status = item.status;
+                card.style.animationDelay = `${index * 30}ms`;
+
                 const img = document.createElement('img');
                 img.src = `${item.thumbnail_url}?session_id=${encodeURIComponent(sessionId)}`;
                 img.alt = item.original_name;
-                
-                const delBtn = document.createElement('div');
-                delBtn.className = 'thumbnail-delete';
-                delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                img.loading = 'lazy';
+
+                // Overlay with label + delete
+                const overlay = document.createElement('div');
+                overlay.className = 'photo-card-overlay';
+
+                const label = document.createElement('span');
+                label.className = 'photo-card-label';
+                // Show a brief OCR preview or filename
+                label.textContent = item.ocr_preview
+                    ? item.ocr_preview.substring(0, 40) + (item.ocr_preview.length > 40 ? '…' : '')
+                    : item.original_name.replace(/^mock_/, '').replace(/\.[^.]+$/, '');
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'photo-card-delete';
+                delBtn.innerHTML = '<span class="material-symbols-rounded">delete</span>';
+                delBtn.title = 'Remove';
                 delBtn.onclick = (e) => {
                     e.stopPropagation();
                     deleteImage(item.id);
                 };
-                
-                div.dataset.status = item.status;
-                
-                const statusDiv = document.createElement('div');
-                statusDiv.className = 'thumbnail-status';
-                
+
+                overlay.appendChild(label);
+                overlay.appendChild(delBtn);
+
+                // Status indicator
+                const statusEl = document.createElement('div');
+                statusEl.className = 'photo-card-status';
+
                 if (item.status === 'processing') {
-                    statusDiv.innerHTML = '<i class="fa-solid fa-spinner status-loading fa-spin"></i>';
+                    hasProcessing = true;
+                    statusEl.classList.add('status-processing');
+                    statusEl.innerHTML = '<span class="material-symbols-rounded">progress_activity</span>';
                 } else if (item.status === 'error') {
-                    statusDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation status-warning" title="${escapeHtml(item.error_message || 'OCR failed')}" style="cursor: pointer;"></i>`;
-                    statusDiv.style.color = 'var(--warning)';
-                    statusDiv.onclick = (e) => {
-                        e.stopPropagation();
-                        alert(`Error: ${item.error_message || 'OCR failed'}`);
-                    };
+                    statusEl.classList.add('status-error-badge');
+                    statusEl.innerHTML = '<span class="material-symbols-rounded">warning</span>';
+                    statusEl.title = item.error_message || 'Could not extract text';
                 } else if (item.has_ocr_text) {
-                    statusDiv.innerHTML = '<i class="fa-solid fa-check status-success"></i>';
+                    statusEl.classList.add('status-ready');
+                    statusEl.innerHTML = '<span class="material-symbols-rounded">check_circle</span>';
+                    // Don't show the check for already-ready items
+                    statusEl.style.display = 'none';
                 } else {
-                    statusDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation status-warning" title="No text found"></i>';
-                    statusDiv.style.color = 'var(--warning)';
+                    statusEl.classList.add('status-error-badge');
+                    statusEl.innerHTML = '<span class="material-symbols-rounded">warning</span>';
+                    statusEl.title = 'No text found';
                 }
-                
-                div.appendChild(img);
-                div.appendChild(delBtn);
-                div.appendChild(statusDiv);
-                
-                div.addEventListener('click', () => openPreview(item.id));
-                
-                thumbnailStrip.appendChild(div);
+
+                card.appendChild(img);
+                card.appendChild(overlay);
+                card.appendChild(statusEl);
+
+                card.addEventListener('click', () => openPreview(item.id));
+
+                photoGrid.appendChild(card);
             });
-            
-            startPolling();
+
+            if (hasProcessing) {
+                startPolling();
+            }
         } catch (error) {
             console.error('Failed to load library:', error);
         }
     }
 
     async function deleteImage(id) {
-        if (!confirm('Are you sure you want to delete this image?')) return;
-        
+        if (!confirm('Remove this photo?')) return;
+
         try {
-            const response = await fetch(`/api/images/${id}`, { 
+            const response = await fetch(`/api/images/${id}`, {
                 method: 'DELETE',
                 headers: getSessionHeaders(),
                 credentials: 'same-origin'
             });
             if (response.ok) {
-                const el = document.getElementById(`thumb-${id}`);
-                if (el) el.remove();
-                showToast('Image deleted successfully.', 'success');
+                showToast('Photo removed', 'success');
                 loadLibrary();
-                
-                // Refresh search if active
                 if (searchInput.value.trim().length >= 2) {
                     performSearch(searchInput.value.trim());
                 }
             } else {
-                showToast('Failed to delete image.', 'error');
+                showToast('Failed to remove photo', 'error');
             }
         } catch (error) {
             console.error(error);
-            showToast('Network error during deletion.', 'error');
+            showToast('Network error', 'error');
         }
     }
 
-    // ---------------------------------
-    // 3. Search Functionality
-    // ---------------------------------
-    
+
+    // ═════════════════════════════════════════════
+    // 4. SEARCH FUNCTIONALITY
+    // ═════════════════════════════════════════════
+
     let searchTimeout = null;
 
     searchInput.addEventListener('input', (e) => {
         const query = e.target.value.trim();
-        
         clearTimeout(searchTimeout);
-        
+
+        // Toggle clear button
+        searchClearBtn.classList.toggle('hidden', query.length === 0);
+
         if (query.length === 0) {
-            showEmptyState('Start searching to see results', 'fa-magnifying-glass-chart');
+            hideResults();
             return;
         }
-        
-        if (query.length < 2) {
-            return;
-        }
-        
+
+        if (query.length < 2) return;
+
         searchTimeout = setTimeout(() => {
             performSearch(query);
         }, 300);
     });
 
-    document.querySelectorAll('.hint-chip').forEach(chip => {
+    searchClearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        searchClearBtn.classList.add('hidden');
+        hideResults();
+        searchInput.focus();
+    });
+
+    // Suggestion chips
+    document.querySelectorAll('.chip').forEach(chip => {
         chip.addEventListener('click', () => {
             const query = chip.getAttribute('data-query');
             if (query && searchInput) {
                 searchInput.value = query;
                 searchInput.focus();
+                searchClearBtn.classList.remove('hidden');
                 performSearch(query);
             }
         });
@@ -494,46 +506,57 @@ document.addEventListener('DOMContentLoaded', () => {
                 credentials: 'same-origin'
             });
             const data = await response.json();
-            
+
             if (data.results && data.results.length > 0) {
                 renderResults(data.results, query);
             } else {
-                showEmptyState(data.message || 'No documents matched your search.', 'fa-ghost');
+                showNoResults(query);
             }
         } catch (error) {
             console.error('Search failed:', error);
-            showEmptyState('Search failed due to an error.', 'fa-triangle-exclamation');
+            showResultsMessage('Search failed — please try again', 'error');
         }
     }
 
     function renderResults(results, query) {
+        resultsArea.classList.remove('hidden');
         resultsArea.innerHTML = '';
-        
+
+        // Results heading
+        const heading = document.createElement('div');
+        heading.className = 'results-heading';
+        heading.textContent = `${results.length} result${results.length !== 1 ? 's' : ''} for "${query}"`;
+        resultsArea.appendChild(heading);
+
         results.forEach((result, index) => {
             const card = document.createElement('div');
             card.className = 'result-card';
-            card.style.animationDelay = `${index * 0.05}s`;
-            
+            card.style.animationDelay = `${index * 60}ms`;
+
+            // Thumbnail
             const thumb = document.createElement('img');
             thumb.className = 'result-thumb';
             thumb.src = `${result.thumbnail_url}?session_id=${encodeURIComponent(sessionId)}`;
-            thumb.alt = 'Document thumbnail';
-            
-            const content = document.createElement('div');
-            content.className = 'result-content';
-            
+            thumb.alt = 'Document';
+            thumb.loading = 'lazy';
+
+            // Body
+            const body = document.createElement('div');
+            body.className = 'result-body';
+
+            // Snippet with highlights
             const snippet = document.createElement('p');
             snippet.className = 'result-snippet';
-            
+
             if (result.highlight_ranges && result.highlight_ranges.length > 0) {
                 let lastIdx = 0;
                 let html = '';
-                
-                const ranges = [...result.highlight_ranges].sort((a,b) => a[0] - b[0]);
+
+                const ranges = [...result.highlight_ranges].sort((a, b) => a[0] - b[0]);
                 const merged = [];
                 if (ranges.length > 0) {
                     let current = [...ranges[0]];
-                    for(let i=1; i<ranges.length; i++) {
+                    for (let i = 1; i < ranges.length; i++) {
                         if (ranges[i][0] <= current[1]) {
                             current[1] = Math.max(current[1], ranges[i][1]);
                         } else {
@@ -543,68 +566,118 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     merged.push(current);
                 }
-                
+
                 merged.forEach(range => {
                     const [start, end] = range;
                     html += escapeHtml(result.snippet.substring(lastIdx, start));
                     html += '<mark>' + escapeHtml(result.snippet.substring(start, end)) + '</mark>';
                     lastIdx = end;
                 });
-                
+
                 html += escapeHtml(result.snippet.substring(lastIdx));
                 snippet.innerHTML = html;
             } else {
-                snippet.textContent = result.snippet;
+                snippet.textContent = result.snippet || 'No preview available';
             }
-            
-            const score = document.createElement('div');
-            score.className = 'result-score';
-            const percentage = Math.round(result.score * 100);
-            score.innerHTML = `<i class="fa-solid fa-bolt"></i> ${percentage}% match`;
-            
-            content.appendChild(snippet);
-            content.appendChild(score);
-            
+
+            // "Why this matched" section
+            const matchReason = document.createElement('div');
+            matchReason.className = 'result-match-reason';
+
+            const matchLabel = document.createElement('span');
+            matchLabel.className = 'match-label';
+            matchLabel.textContent = 'Matched:';
+            matchReason.appendChild(matchLabel);
+
+            const matchedTerms = result.matched_terms && result.matched_terms.length > 0
+                ? result.matched_terms
+                : query.split(/\s+/).filter(t => t.length >= 2);
+
+            matchedTerms.forEach(term => {
+                const termEl = document.createElement('span');
+                termEl.className = 'match-term';
+                // Format numbers with ₹ if digit-only
+                const displayTerm = /^\d+$/.test(term) ? `₹${Number(term).toLocaleString('en-IN')}` : capitalize(term);
+                termEl.innerHTML = `<span class="material-symbols-rounded">check</span>${escapeHtml(displayTerm)}`;
+                matchReason.appendChild(termEl);
+            });
+
+            // Confidence indicator (non-technical)
+            const confidence = document.createElement('div');
+            confidence.className = 'result-confidence';
+            const pct = Math.round(result.score * 100);
+            let level, dotClass;
+            if (pct >= 85) { level = 'Strong match'; dotClass = 'confidence-high'; }
+            else if (pct >= 50) { level = 'Partial match'; dotClass = 'confidence-medium'; }
+            else { level = 'Weak match'; dotClass = 'confidence-low'; }
+            confidence.innerHTML = `<span class="confidence-dot ${dotClass}"></span>${level}`;
+
+            body.appendChild(snippet);
+            body.appendChild(matchReason);
+            body.appendChild(confidence);
+
             card.appendChild(thumb);
-            card.appendChild(content);
-            
+            card.appendChild(body);
+
             card.addEventListener('click', () => openPreview(result.image_id));
-            
+
             resultsArea.appendChild(card);
         });
+
+        // Scroll results into view
+        resultsArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function showEmptyState(message, iconClass) {
+    function showNoResults(query) {
+        resultsArea.classList.remove('hidden');
         resultsArea.innerHTML = `
-            <div id="empty-state" class="empty-state">
-                <div class="empty-state-icon">
-                    <i class="fa-solid ${iconClass}"></i>
+            <div class="empty-state">
+                <span class="material-symbols-rounded empty-state-icon">image_search</span>
+                <div class="empty-state-title">No matching photos found</div>
+                <div class="empty-state-message">
+                    We couldn't find a document containing<br>
+                    <strong>"${escapeHtml(query)}"</strong>
                 </div>
-                <p>${message}</p>
+                <ul class="empty-state-suggestions">
+                    <li>Try a person's name</li>
+                    <li>Try a document type (receipt, invoice)</li>
+                    <li>Try a month (September, March)</li>
+                    <li>Try an amount (6500, 2340)</li>
+                    <li>Try a merchant or medicine name</li>
+                </ul>
             </div>
         `;
     }
 
-    function escapeHtml(unsafe) {
-        return (unsafe || '').toString()
-             .replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;")
-             .replace(/"/g, "&quot;")
-             .replace(/'/g, "&#039;");
+    function showResultsMessage(message, type) {
+        resultsArea.classList.remove('hidden');
+        const iconName = type === 'error' ? 'error' : 'search';
+        resultsArea.innerHTML = `
+            <div class="empty-state">
+                <span class="material-symbols-rounded empty-state-icon">${iconName}</span>
+                <div class="empty-state-title">${escapeHtml(message)}</div>
+            </div>
+        `;
     }
 
-    // ---------------------------------
-    // 4. Preview Modal
-    // ---------------------------------
+    function hideResults() {
+        resultsArea.classList.add('hidden');
+        resultsArea.innerHTML = '';
+    }
+
+
+    // ═════════════════════════════════════════════
+    // 5. PREVIEW MODAL
+    // ═════════════════════════════════════════════
 
     async function openPreview(imageId) {
         modalImage.src = '';
-        modalOcrText.textContent = 'Loading...';
+        modalOcrText.textContent = 'Loading…';
+        previewModal.classList.remove('hidden');
         previewModal.classList.add('active');
-        
+
         modalImage.src = `/api/images/${imageId}?session_id=${encodeURIComponent(sessionId)}`;
-        
+
         try {
             const response = await fetch(`/api/images/${imageId}/ocr`, {
                 headers: getSessionHeaders(),
@@ -612,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (response.ok) {
                 const data = await response.json();
-                modalOcrText.textContent = data.ocr_text || 'No text extracted.';
+                modalOcrText.textContent = data.ocr_text || 'No text extracted from this photo.';
             } else {
                 modalOcrText.textContent = 'Failed to load text.';
             }
@@ -624,6 +697,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function closePreview() {
         previewModal.classList.remove('active');
         setTimeout(() => {
+            previewModal.classList.add('hidden');
             modalImage.src = '';
             modalOcrText.textContent = '';
         }, 300);
@@ -631,26 +705,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     closeModalBtn.addEventListener('click', closePreview);
     modalBackdrop.addEventListener('click', closePreview);
-    
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && previewModal.classList.contains('active')) {
             closePreview();
         }
     });
 
-    // ---------------------------------
-    // Utilities
-    // ---------------------------------
-    
+
+    // ═════════════════════════════════════════════
+    // UTILITIES
+    // ═════════════════════════════════════════════
+
     function showToast(message, type = 'success') {
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
-        
-        const icon = type === 'success' ? 'fa-check-circle' : 'fa-circle-exclamation';
-        toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${escapeHtml(message)}</span>`;
-        
+        const iconName = type === 'success' ? 'check_circle' : 'error';
+        toast.innerHTML = `<span class="material-symbols-rounded">${iconName}</span><span>${escapeHtml(message)}</span>`;
         toastContainer.appendChild(toast);
-        
+
         setTimeout(() => {
             toast.style.opacity = '0';
             toast.style.transform = 'translateY(10px)';
@@ -658,5 +731,19 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => toast.remove(), 300);
         }, 4000);
     }
-});
 
+    function escapeHtml(unsafe) {
+        return (unsafe || '').toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function capitalize(str) {
+        if (!str) return '';
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+});

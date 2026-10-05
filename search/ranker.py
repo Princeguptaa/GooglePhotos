@@ -57,11 +57,13 @@ def rank(query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         if score >= Config.MIN_SCORE_THRESHOLD:
             snippet_info = extract_snippet(ocr_text, clean_query, Config.SNIPPET_MAX_LENGTH)
+            matched_terms = _extract_matched_terms(q_tokens, norm_text, raw_text)
             results.append({
                 'id': doc.get('id'),
                 'score': float(round(score, 3)),
                 'snippet': snippet_info['text'],
-                'highlight_ranges': snippet_info['highlight_ranges']
+                'highlight_ranges': snippet_info['highlight_ranges'],
+                'matched_terms': matched_terms
             })
 
     # Sort descending by score
@@ -154,6 +156,23 @@ def _compute_match_score(clean_query: str, norm_query: str, q_tokens: List[str],
         return round(final, 3)
     else:
         return 0.0
+
+def _extract_matched_terms(q_tokens: List[str], norm_text: str, raw_text: str) -> List[str]:
+    """Returns the subset of query tokens that actually matched in the document."""
+    matched = []
+    doc_words = set(re.sub(r'[^\w]', '', w) for w in norm_text.split())
+    for q_tok in q_tokens:
+        if q_tok.isdigit():
+            # Check for exact digit match (with optional commas)
+            pattern = r'\b' + ',?'.join(q_tok) + r'\b'
+            if re.search(pattern, norm_text) or re.search(pattern, raw_text):
+                matched.append(q_tok)
+        else:
+            if q_tok in doc_words or re.search(r'\b' + re.escape(q_tok) + r'\b', norm_text):
+                matched.append(q_tok)
+            elif len(q_tok) >= 3 and any(q_tok in w for w in doc_words if not w.isdigit()):
+                matched.append(q_tok)
+    return matched
 
 def extract_snippet(ocr_text: str, query: str, max_len: int = 150) -> Dict[str, Any]:
     """
