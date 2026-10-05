@@ -16,7 +16,7 @@ class Config:
 
     # OCR
     TESSERACT_CMD = os.environ.get('TESSERACT_CMD', 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe' if os.name == 'nt' and os.path.exists('C:\\Program Files\\Tesseract-OCR\\tesseract.exe') else 'tesseract')
-    TESSERACT_PSM = 3             # Page segmentation mode: 3 = Fully automatic
+    TESSERACT_PSM = 11            # Page segmentation mode: 11 = Sparse text (much faster)
     TESSERACT_OEM = 1             # OCR engine mode: 1 = Neural nets LSTM only (faster, no legacy fallback)
 
     # Search

@@ -127,10 +127,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (loadSampleBtn) {
-        loadSampleBtn.addEventListener('click', async () => {
+        loadSampleBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
             loadSampleBtn.disabled = true;
             const originalHTML = loadSampleBtn.innerHTML;
-            loadSampleBtn.innerHTML = '<span class="material-symbols-rounded" style="animation:spin 1s linear infinite">progress_activity</span><span class="header-btn-label">Loading…</span>';
+            loadSampleBtn.innerHTML = '<span class="material-symbols-rounded" style="animation:spin 1s linear infinite">progress_activity</span>Loading…';
             try {
                 const response = await fetch('/api/load-samples', {
                     method: 'POST',

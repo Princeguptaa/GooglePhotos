@@ -332,15 +332,25 @@ body {
 }
 
 /* Suggestion chips */
+.suggestion-container {
+    margin-top: 16px;
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+
+.suggestion-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
 .suggestion-chips {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     justify-content: center;
-    margin-top: 16px;
-    max-width: 720px;
-    margin-left: auto;
-    margin-right: auto;
 }
 
 .chip {

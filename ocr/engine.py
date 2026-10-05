@@ -7,9 +7,9 @@ from config import Config
 
 # Maximum pixel dimension (longest side) fed to Tesseract.
 # Phone photos are often 3000-4000px — Tesseract time scales roughly
-# quadratically with pixel count, so downsizing to 800px gives a
+# quadratically with pixel count, so downsizing to 600px gives a
 # massive speedup with minimal OCR quality loss for document text.
-OCR_MAX_DIMENSION = 800
+OCR_MAX_DIMENSION = 600
 
 # Hard timeout in seconds for a single Tesseract invocation.
 # On Render free tier (0.1 CPU), large images can take 30-60s+.
