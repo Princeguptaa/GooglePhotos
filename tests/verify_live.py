@@ -49,11 +49,11 @@ def test_live_session():
         r = res['results'][0]
         print(f'   - Doc ID: {r["image_id"][:8]}... | Score: {r["score"]*100:.1f}% | Snippet: {r["snippet"]}')
 
-    # 6. Search 'electricity bill'
-    req = urllib.request.Request(f'{BASE}/api/search?q=electricity+bill', headers={'X-Session-ID': 'demo'})
+    # 6. Search 'watermelon'
+    req = urllib.request.Request(f'{BASE}/api/search?q=watermelon', headers={'X-Session-ID': 'demo'})
     with urllib.request.urlopen(req) as resp:
         res = json.loads(resp.read().decode('utf-8'))
-        print(f'6. Search "electricity bill": {len(res["results"])} match(es) | Message: "{res.get("message")}"')
+        print(f'6. Search "watermelon": {len(res["results"])} match(es)')
         assert len(res['results']) == 0
 
     # 7. Device 2 / Reopened link persistence

@@ -641,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <ul class="empty-state-suggestions">
                     <li>Try a person's name</li>
-                    <li>Try a document type (receipt, invoice)</li>
+                    <li>Try an exact word from the document</li>
                     <li>Try a month (September, March)</li>
                     <li>Try an amount (6500, 2340)</li>
                     <li>Try a merchant or medicine name</li>
