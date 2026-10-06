@@ -587,7 +587,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const matchLabel = document.createElement('span');
             matchLabel.className = 'match-label';
-            matchLabel.textContent = 'Matched:';
+            if (result.total_clues_count && result.total_clues_count > 1) {
+                matchLabel.textContent = `Matched (${result.matched_clues_count}/${result.total_clues_count} clues):`;
+            } else {
+                matchLabel.textContent = 'Matched:';
+            }
             matchReason.appendChild(matchLabel);
 
             const matchedTerms = result.matched_terms && result.matched_terms.length > 0

@@ -17,7 +17,7 @@ def test_live_session():
     with urllib.request.urlopen(req) as resp:
         docs = json.loads(resp.read().decode('utf-8'))
         print(f'2. Initial Library Load: {len(docs)} documents returned immediately without user action.')
-        assert len(docs) == 8, f'Expected 8 documents, got {len(docs)}'
+        assert len(docs) == 14, f'Expected 14 documents, got {len(docs)}'
         for d in docs:
             print(f'   - {d["original_name"]} (ID: {d["id"][:8]}...)')
 
@@ -61,7 +61,7 @@ def test_live_session():
     with urllib.request.urlopen(req) as resp:
         docs2 = json.loads(resp.read().decode('utf-8'))
         print(f'7. Reopen/Device 2 Persistence: {len(docs2)} documents verified intact.')
-        assert len(docs2) == 8
+        assert len(docs2) == 14
 
     print("\nALL VERIFICATIONS PASSED SUCCESSFULLY!")
 

@@ -172,7 +172,10 @@ def upload():
                 logger.error(f"[{img_id}] Traceback:\n{traceback.format_exc()}")
                 db.update_document_status(img_id, s_id, 'error', f"OCR failed ({type(e).__name__}). Check logs.")
 
-        executor.submit(process_image, image_id, session_id, saved_path, file.filename)
+        if app.config.get('TESTING'):
+            process_image(image_id, session_id, saved_path, file.filename)
+        else:
+            executor.submit(process_image, image_id, session_id, saved_path, file.filename)
         
         thumbnail_url = f"/api/images/{image_id}"
 
@@ -206,7 +209,9 @@ def search():
             "score": r['score'],
             "snippet": r['snippet'],
             "highlight_ranges": r['highlight_ranges'],
-            "matched_terms": r.get('matched_terms', [])
+            "matched_terms": r.get('matched_terms', []),
+            "matched_clues_count": r.get('matched_clues_count', 0),
+            "total_clues_count": r.get('total_clues_count', 0)
         })
         
     if not formatted_results:

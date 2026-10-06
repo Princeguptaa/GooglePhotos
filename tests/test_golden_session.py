@@ -14,7 +14,7 @@ def test_golden_session_end_to_end():
     r_lib = incognito.get('/api/library', headers={'X-Session-ID': 'demo'})
     assert r_lib.status_code == 200
     docs = r_lib.get_json()
-    assert len(docs) == 8, f"Expected 8 documents in golden session, found {len(docs)}"
+    assert len(docs) == 14, f"Expected 14 documents in golden session, found {len(docs)}"
 
     # 2. Test exact search '6500' -> scores >= 90% on mock_payment.png
     res_6500 = incognito.get('/api/search?q=6500', headers={'X-Session-ID': 'demo'}).get_json()
@@ -47,7 +47,7 @@ def test_golden_session_end_to_end():
     
     r_dev2_lib = device_2.get('/api/library', headers={'X-Session-ID': 'demo'})
     docs_dev2 = r_dev2_lib.get_json()
-    assert len(docs_dev2) == 8
+    assert len(docs_dev2) == 14
 
     res_dev2_search = device_2.get('/api/search?q=6500', headers={'X-Session-ID': 'demo'}).get_json()
     assert len(res_dev2_search['results']) == 1

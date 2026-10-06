@@ -14,6 +14,12 @@ SAMPLE_OCR_CACHE = {
     "mock_medicine.png": "Prescription Dr. Anita Sharma Patient: Ramesh Kumar Paracetamol 500mg Amoxicillin 250mg",
     "mock_payment.png": "Payment Receipt Amount: Rs 6,500 To: Samrat Mehta Date: 15 March 2026 Ref: TXN9847321",
     "mock_receipt.png": "Invoice #INV-2026-0312 March 2026 Grocery Mart Total: Rs 2,340",
+    "mock_manoj_payment.png": "Payment Receipt Amount: Rs 3,200 To: Manoj Kumar Date: 10 Aug 2026 Ref: TXN8877112",
+    "mock_manoj_id.png": "Employee ID Card Name: Manoj Kumar Department: Operations EMP-9021",
+    "mock_prince_aadhaar.png": "Aadhaar Card Name: Prince Gupta DOB: 15/08/1998 UIDAI No: XXXX XXXX 9120",
+    "mock_prince_marksheet.png": "Semester Mark Sheet University of Delhi Student: Prince Gupta Roll No: 2024/CS/0156 CGPA: 8.7",
+    "mock_invoice_september.png": "Invoice #INV-2026-0914 September 2026 Cloud Hub Technologies Total: Rs 8,450",
+    "mock_prescription_generic.png": "Prescription Dr. Anita Sharma Patient: Sunita Rao Cetirizine 10mg Vitamin D3",
     "test_medicine.png": "Medicine Paracetamol 500mg",
     "test_payment.png": "yment Amount Rs 6500 Date March 2(",
     "test_receipt.png": "Invoice #INV-2026-0312 Grocery Mart"
@@ -74,4 +80,3 @@ def load_mock_data():
 
 if __name__ == '__main__':
     load_mock_data()
-
