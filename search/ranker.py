@@ -1,7 +1,5 @@
 import re
 from typing import List, Dict, Any, Tuple
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from rapidfuzz import fuzz, process
 from config import Config
 

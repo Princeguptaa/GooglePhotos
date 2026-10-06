@@ -373,10 +373,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const label = document.createElement('span');
                 label.className = 'photo-card-label';
-                // Show a brief OCR preview or filename
-                label.textContent = item.ocr_preview
-                    ? item.ocr_preview.substring(0, 40) + (item.ocr_preview.length > 40 ? '…' : '')
-                    : item.original_name.replace(/^mock_/, '').replace(/\.[^.]+$/, '');
+                // Show photo filename
+                label.textContent = item.original_name;
+                label.title = item.ocr_preview || item.original_name;
 
                 const delBtn = document.createElement('button');
                 delBtn.className = 'photo-card-delete';

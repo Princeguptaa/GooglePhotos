@@ -6,6 +6,7 @@ from load_mock_data import seed_samples_for_session
 @pytest.fixture(scope="module")
 def client():
     # Setup demo session with loaded mock data
+    db.clear_session_documents('test_acceptance_session')
     seed_samples_for_session('test_acceptance_session')
     with app.test_client() as client:
         yield client

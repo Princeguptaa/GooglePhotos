@@ -94,6 +94,12 @@ def delete_document(doc_id: str, session_id: str | None = None) -> bool:
                 )
             return cursor.rowcount > 0
 
+def clear_session_documents(session_id: str) -> int:
+    with closing(get_connection()) as conn:
+        with conn:
+            cursor = conn.execute('DELETE FROM documents WHERE session_id = ?', (session_id,))
+            return cursor.rowcount
+
 def get_document_count(session_id: str | None = None) -> int:
     try:
         with closing(get_connection()) as conn:
